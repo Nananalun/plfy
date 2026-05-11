@@ -1,0 +1,690 @@
+{
+  "jobs": [
+    {
+      "id": "job_1778427193446",
+      "name": "批量生成 2026/5/10 23:33:13",
+      "workflowName": "批量重绘",
+      "itemCount": 1,
+      "progress": 100,
+      "status": "failed",
+      "statusTone": "red",
+      "routingPolicy": "quality-first",
+      "assetIds": [
+        "asset_1778425738512"
+      ],
+      "outputCount": 0,
+      "provider": "local",
+      "taskType": "redraw-translate-zh-en",
+      "providerModelFamily": "dashscope",
+      "model": "wanx2.1-imageedit",
+      "prompt": "保留原图的主体、构图、版式、层级、色彩和风格，只把图片中的中文改成自然英文。不要添加无关元素，不要改变产品、人物或背景，不要保留任何中文字符。",
+      "quality": "high",
+      "size": "auto"
+    },
+    {
+      "id": "job_1778427189746",
+      "name": "批量生成 2026/5/10 23:33:09",
+      "workflowName": "批量重绘",
+      "itemCount": 1,
+      "progress": 100,
+      "status": "failed",
+      "statusTone": "red",
+      "routingPolicy": "quality-first",
+      "assetIds": [
+        "asset_1778425738512"
+      ],
+      "outputCount": 0,
+      "provider": "local",
+      "taskType": "redraw-translate-zh-en",
+      "providerModelFamily": "dashscope",
+      "model": "wanx2.0-imageedit",
+      "prompt": "保留原图的主体、构图、版式、层级、色彩和风格，只把图片中的中文改成自然英文。不要添加无关元素，不要改变产品、人物或背景，不要保留任何中文字符。",
+      "quality": "high",
+      "size": "auto"
+    },
+    {
+      "id": "job_1778425739622",
+      "name": "批量生成 2026/5/10 23:08:59",
+      "workflowName": "批量重绘",
+      "itemCount": 1,
+      "progress": 100,
+      "status": "succeeded",
+      "statusTone": "green",
+      "routingPolicy": "quality-first",
+      "assetIds": [
+        "asset_1778425738512"
+      ],
+      "outputCount": 1,
+      "provider": "local",
+      "taskType": "redraw-translate-zh-en",
+      "providerModelFamily": "dashscope",
+      "model": "wan2.7-image-pro",
+      "prompt": "保留原图的主体、构图、版式、层级、色彩和风格，只把图片中的中文改成自然英文。不要添加无关元素，不要改变产品、人物或背景，不要保留任何中文字符。",
+      "quality": "high",
+      "size": "auto"
+    },
+    {
+      "id": "job_1778425572270",
+      "name": "批量生成 2026/5/10 23:06:12",
+      "workflowName": "批量重绘",
+      "itemCount": 1,
+      "progress": 100,
+      "status": "succeeded",
+      "statusTone": "green",
+      "routingPolicy": "quality-first",
+      "assetIds": [
+        "asset_1778425551703"
+      ],
+      "outputCount": 1,
+      "provider": "local",
+      "taskType": "redraw-translate-zh-en",
+      "providerModelFamily": "dashscope",
+      "model": "wan2.7-image-pro",
+      "prompt": "保留原图的主体、构图、版式、层级、色彩和风格，只把图片中的中文改成自然英文。不要添加无关元素，不要改变产品、人物或背景，不要保留任何中文字符。",
+      "quality": "high",
+      "size": "auto"
+    },
+    {
+      "id": "job_1778425567428",
+      "name": "批量生成 2026/5/10 23:06:07",
+      "workflowName": "批量重绘",
+      "itemCount": 1,
+      "progress": 100,
+      "status": "failed",
+      "statusTone": "red",
+      "routingPolicy": "quality-first",
+      "assetIds": [
+        "asset_1778425551703"
+      ],
+      "outputCount": 0,
+      "provider": "local",
+      "taskType": "redraw-translate-zh-en",
+      "providerModelFamily": "dashscope",
+      "model": "wanx2.0-imageedit",
+      "prompt": "保留原图的主体、构图、版式、层级、色彩和风格，只把图片中的中文改成自然英文。不要添加无关元素，不要改变产品、人物或背景，不要保留任何中文字符。",
+      "quality": "high",
+      "size": "auto"
+    },
+    {
+      "id": "job_1778425557174",
+      "name": "批量生成 2026/5/10 23:05:57",
+      "workflowName": "批量重绘",
+      "itemCount": 1,
+      "progress": 100,
+      "status": "failed",
+      "statusTone": "red",
+      "routingPolicy": "quality-first",
+      "assetIds": [
+        "asset_1778425551703"
+      ],
+      "outputCount": 0,
+      "provider": "local",
+      "taskType": "redraw-translate-zh-en",
+      "providerModelFamily": "dashscope",
+      "model": "wanx2.1-imageedit",
+      "prompt": "保留原图的主体、构图、版式、层级、色彩和风格，只把图片中的中文改成自然英文。不要添加无关元素，不要改变产品、人物或背景，不要保留任何中文字符。",
+      "quality": "high",
+      "size": "auto"
+    },
+    {
+      "id": "job_1778425487424",
+      "name": "批量生成 2026/5/10 23:04:47",
+      "workflowName": "批量重绘",
+      "itemCount": 1,
+      "progress": 100,
+      "status": "succeeded",
+      "statusTone": "green",
+      "routingPolicy": "quality-first",
+      "assetIds": [
+        "asset_1778424304014"
+      ],
+      "outputCount": 1,
+      "provider": "local",
+      "taskType": "redraw-translate-zh-en",
+      "providerModelFamily": "dashscope",
+      "model": "wan2.7-image-pro",
+      "prompt": "保留原图的主体、构图、版式、层级、色彩和风格，只把图片中的中文改成自然英文。不要添加无关元素，不要改变产品、人物或背景，不要保留任何中文字符。",
+      "quality": "high",
+      "size": "auto"
+    },
+    {
+      "id": "job_1778425153425",
+      "name": "批量重绘 2026/5/10 22:59:13",
+      "workflowName": "Simple Redraw",
+      "itemCount": 1,
+      "progress": 100,
+      "status": "succeeded",
+      "statusTone": "green",
+      "routingPolicy": "quality-first",
+      "assetIds": [
+        "asset_1778424304014"
+      ],
+      "outputCount": 1,
+      "provider": "local",
+      "taskType": "redraw-translate-zh-en",
+      "providerModelFamily": "dashscope",
+      "model": "wan2.7-image-pro",
+      "prompt": "Redraw this image as a polished final version. Replace all Chinese text with natural English. Preserve the original composition, hierarchy, spacing, brand mood, and visual structure as closely as possible. Do not keep any Chinese characters. Keep the image clean and production-ready.",
+      "quality": "high",
+      "size": "auto"
+    },
+    {
+      "id": "job_1778424424561",
+      "name": "123",
+      "workflowName": "Campaign Inpaint Review",
+      "itemCount": 1,
+      "progress": 100,
+      "status": "failed",
+      "statusTone": "red",
+      "routingPolicy": "quality-first",
+      "assetIds": [
+        "asset_1778424304014"
+      ],
+      "preset": "",
+      "outputCount": 0,
+      "provider": "local",
+      "taskType": "redraw-translate-zh-en",
+      "providerModelFamily": "dashscope",
+      "model": "wanx2.0-imageedit",
+      "prompt": "Redraw this image as a polished final version. Replace all Chinese text with natural English. Preserve the original composition, hierarchy, spacing, brand mood, and visual structure as closely as possible. Do not keep any Chinese characters. Keep the image clean and production-ready.",
+      "quality": "",
+      "size": "auto"
+    },
+    {
+      "id": "job_1778424331648",
+      "name": "test",
+      "workflowName": "Campaign Inpaint Review",
+      "itemCount": 1,
+      "progress": 100,
+      "status": "succeeded",
+      "statusTone": "green",
+      "routingPolicy": "quality-first",
+      "assetIds": [
+        "asset_1778424304014"
+      ],
+      "preset": "",
+      "outputCount": 1,
+      "provider": "openai",
+      "taskType": "redraw-translate-zh-en",
+      "providerModelFamily": "dashscope",
+      "model": "wanx2.1-imageedit",
+      "prompt": "Redraw this image as a polished final version. Replace all Chinese text with natural English. Preserve the original composition, hierarchy, spacing, brand mood, and visual structure as closely as possible. Do not keep any Chinese characters. Keep the image clean and production-ready.",
+      "quality": "",
+      "size": "auto"
+    },
+    {
+      "id": "job_1778424324785",
+      "name": "test",
+      "workflowName": "Campaign Inpaint Review",
+      "itemCount": 1,
+      "progress": 100,
+      "status": "succeeded",
+      "statusTone": "green",
+      "routingPolicy": "quality-first",
+      "assetIds": [
+        "asset_1778424304014"
+      ],
+      "preset": "",
+      "outputCount": 1,
+      "provider": "openai",
+      "taskType": "redraw-translate-zh-en",
+      "providerModelFamily": "dashscope",
+      "model": "wan2.7-image-pro",
+      "prompt": "Redraw this image as a polished final version. Replace all Chinese text with natural English. Preserve the original composition, hierarchy, spacing, brand mood, and visual structure as closely as possible. Do not keep any Chinese characters. Keep the image clean and production-ready.",
+      "quality": "",
+      "size": "auto"
+    },
+    {
+      "id": "job_1778424318549",
+      "name": "test",
+      "workflowName": "Campaign Inpaint Review",
+      "itemCount": 1,
+      "progress": 100,
+      "status": "succeeded",
+      "statusTone": "green",
+      "routingPolicy": "quality-first",
+      "assetIds": [
+        "asset_1778424304014"
+      ],
+      "preset": "",
+      "outputCount": 1,
+      "provider": "openai",
+      "taskType": "redraw-translate-zh-en",
+      "providerModelFamily": "dashscope",
+      "model": "wanx2.1-imageedit",
+      "prompt": "Redraw this image as a polished final version. Replace all Chinese text with natural English. Preserve the original composition, hierarchy, spacing, brand mood, and visual structure as closely as possible. Do not keep any Chinese characters. Keep the image clean and production-ready.",
+      "quality": "",
+      "size": "auto"
+    },
+    {
+      "id": "job_1024",
+      "name": "春季商品主图翻新",
+      "workflowName": "Catalog Background Refresh",
+      "itemCount": 1200,
+      "progress": 74,
+      "status": "running",
+      "statusTone": "blue",
+      "routingPolicy": "quality-first"
+    },
+    {
+      "id": "job_1025",
+      "name": "短视频封面批量出图",
+      "workflowName": "Creator Thumbnail Boost",
+      "itemCount": 360,
+      "progress": 100,
+      "status": "succeeded",
+      "statusTone": "green",
+      "routingPolicy": "speed-first"
+    },
+    {
+      "id": "job_1026",
+      "name": "品牌海报局部重绘",
+      "workflowName": "Campaign Inpaint Review",
+      "itemCount": 96,
+      "progress": 58,
+      "status": "waiting-review",
+      "statusTone": "amber",
+      "routingPolicy": "human-in-loop"
+    },
+    {
+      "id": "job_1027",
+      "name": "旧图超分修复",
+      "workflowName": "Archive Restoration",
+      "itemCount": 4200,
+      "progress": 21,
+      "status": "running",
+      "statusTone": "blue",
+      "routingPolicy": "cost-balanced"
+    }
+  ],
+  "workflows": [
+    {
+      "id": "wf_01",
+      "name": "Catalog Background Refresh",
+      "version": 12,
+      "trigger": "SKU intake",
+      "summary": "读入商品图后自动抠图、换背景、加阴影并导出电商规格。",
+      "steps": [
+        "asset-input",
+        "remove-bg",
+        "inpaint-bg",
+        "quality-check",
+        "export"
+      ]
+    },
+    {
+      "id": "wf_02",
+      "name": "Campaign Inpaint Review",
+      "version": 6,
+      "trigger": "creative brief",
+      "summary": "广告海报局部替换后进入质检和人工复核，再统一打包交付。",
+      "steps": [
+        "asset-input",
+        "mask-merge",
+        "inpaint",
+        "human-review",
+        "export"
+      ]
+    },
+    {
+      "id": "wf_03",
+      "name": "Creator Thumbnail Boost",
+      "version": 4,
+      "trigger": "batch upload",
+      "summary": "统一人物肤感、强化主体、批量生成 3 个封面版本。",
+      "steps": [
+        "normalize",
+        "retouch",
+        "variant-generate",
+        "upscale",
+        "export"
+      ]
+    },
+    {
+      "id": "wf_04",
+      "name": "Archive Restoration",
+      "version": 3,
+      "trigger": "scheduled job",
+      "summary": "低清图自动修复、放大、去噪并归档到对象存储。",
+      "steps": [
+        "ingest",
+        "denoise",
+        "upscale",
+        "quality-check",
+        "archive"
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "id": "asset_1778425748754",
+      "name": "1778425748750-asset_1778425738512-dashscope.png",
+      "kind": "PNG",
+      "dimensions": "2079 x 2016",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [
+        "result",
+        "dashscope",
+        "wan2.7-image-pro"
+      ],
+      "previewUrl": "/outputs/1778425748750-asset_1778425738512-dashscope.png",
+      "source": "job:job_1778425739622",
+      "uploadedAt": "2026-05-10T15:09:08.754Z"
+    },
+    {
+      "id": "asset_1778425738512",
+      "name": "O1CN01P9Qdo42DCwuECOTjw_!!144058574.jpg_q50s50.jpg_.webp",
+      "kind": "WEBP",
+      "dimensions": "750 x 727",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [],
+      "previewUrl": "/uploads/1778425738509-O1CN01P9Qdo42DCwuECOTjw_--144058574-jpg_q50s50-jpg_.webp",
+      "source": "browser-upload",
+      "batchId": "batch_1778425738507",
+      "batchLabel": "批次 2026/5/10 23:08:58",
+      "uploadedAt": "2026-05-10T15:08:58.507Z"
+    },
+    {
+      "id": "asset_1778425586227",
+      "name": "1778425586223-asset_1778425551703-dashscope.png",
+      "kind": "PNG",
+      "dimensions": "1391 x 3013",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [
+        "result",
+        "dashscope",
+        "wan2.7-image-pro"
+      ],
+      "previewUrl": "/outputs/1778425586223-asset_1778425551703-dashscope.png",
+      "source": "job:job_1778425572270",
+      "uploadedAt": "2026-05-10T15:06:26.227Z"
+    },
+    {
+      "id": "asset_1778425551703",
+      "name": "1.jpg",
+      "kind": "JPG",
+      "dimensions": "1125 x 2436",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [],
+      "previewUrl": "/uploads/1778425551699-1.jpg",
+      "source": "browser-upload",
+      "batchId": "batch_1778425551696",
+      "batchLabel": "批次 2026/5/10 23:05:51",
+      "uploadedAt": "2026-05-10T15:05:51.696Z"
+    },
+    {
+      "id": "asset_1778425499389",
+      "name": "1778425499381-asset_1778424304014-dashscope.png",
+      "kind": "PNG",
+      "dimensions": "1391 x 3013",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [
+        "result",
+        "dashscope",
+        "wan2.7-image-pro"
+      ],
+      "previewUrl": "/outputs/1778425499381-asset_1778424304014-dashscope.png",
+      "source": "job:job_1778425487424",
+      "uploadedAt": "2026-05-10T15:04:59.389Z"
+    },
+    {
+      "id": "asset_1778425165415",
+      "name": "1778425165411-asset_1778424304014-dashscope.png",
+      "kind": "PNG",
+      "dimensions": "1391 x 3013",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [
+        "result",
+        "dashscope",
+        "wan2.7-image-pro"
+      ],
+      "previewUrl": "/outputs/1778425165411-asset_1778424304014-dashscope.png",
+      "source": "job:job_1778425153425",
+      "uploadedAt": "2026-05-10T14:59:25.415Z"
+    },
+    {
+      "id": "asset_1778424346895",
+      "name": "1778424346893-asset_1778424304014-dashscope.png",
+      "kind": "PNG",
+      "dimensions": "自动",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [
+        "result",
+        "dashscope",
+        "wanx2.1-imageedit"
+      ],
+      "previewUrl": "/outputs/1778424346893-asset_1778424304014-dashscope.png",
+      "source": "job:job_1778424331648",
+      "uploadedAt": "2026-05-10T14:45:46.895Z"
+    },
+    {
+      "id": "asset_1778424336907",
+      "name": "1778424336900-asset_1778424304014-dashscope.png",
+      "kind": "PNG",
+      "dimensions": "1391 x 3013",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [
+        "result",
+        "dashscope",
+        "wan2.7-image-pro"
+      ],
+      "previewUrl": "/outputs/1778424336900-asset_1778424304014-dashscope.png",
+      "source": "job:job_1778424324785",
+      "uploadedAt": "2026-05-10T14:45:36.907Z"
+    },
+    {
+      "id": "asset_1778424333965",
+      "name": "1778424333963-asset_1778424304014-dashscope.png",
+      "kind": "PNG",
+      "dimensions": "自动",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [
+        "result",
+        "dashscope",
+        "wanx2.1-imageedit"
+      ],
+      "previewUrl": "/outputs/1778424333963-asset_1778424304014-dashscope.png",
+      "source": "job:job_1778424318549",
+      "uploadedAt": "2026-05-10T14:45:33.965Z"
+    },
+    {
+      "id": "asset_1778424304014",
+      "name": "1.jpg",
+      "kind": "JPG",
+      "dimensions": "1125 x 2436",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [],
+      "previewUrl": "/uploads/1778424304011-1.jpg",
+      "source": "browser-upload",
+      "batchId": "batch_1778424304010",
+      "batchLabel": "批次 2026/5/10 22:45:04",
+      "uploadedAt": "2026-05-10T14:45:04.010Z"
+    },
+    {
+      "id": "asset_1778423699466",
+      "name": "微信图片_20260121215712_50_700.jpg",
+      "kind": "JPG",
+      "dimensions": "4284 x 5712",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [],
+      "previewUrl": "/uploads/1778423699463-----_20260121215712_50_700.jpg",
+      "source": "browser-upload",
+      "batchId": "batch_1778423699390",
+      "batchLabel": "批次 2026/5/10 22:34:59",
+      "uploadedAt": "2026-05-10T14:34:59.447Z"
+    },
+    {
+      "id": "asset_1778423699462",
+      "name": "微信图片_20260121215711_49_700.jpg",
+      "kind": "JPG",
+      "dimensions": "4284 x 5712",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [],
+      "previewUrl": "/uploads/1778423699458-----_20260121215711_49_700.jpg",
+      "source": "browser-upload",
+      "batchId": "batch_1778423699390",
+      "batchLabel": "批次 2026/5/10 22:34:59",
+      "uploadedAt": "2026-05-10T14:34:59.447Z"
+    },
+    {
+      "id": "asset_1778423699458",
+      "name": "微信图片_20260121215710_48_700.jpg",
+      "kind": "JPG",
+      "dimensions": "4284 x 5712",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [],
+      "previewUrl": "/uploads/1778423699455-----_20260121215710_48_700.jpg",
+      "source": "browser-upload",
+      "batchId": "batch_1778423699390",
+      "batchLabel": "批次 2026/5/10 22:34:59",
+      "uploadedAt": "2026-05-10T14:34:59.447Z"
+    },
+    {
+      "id": "asset_1778423699454",
+      "name": "jingxizishavn1.jpg",
+      "kind": "JPG",
+      "dimensions": "993 x 1451",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [],
+      "previewUrl": "/uploads/1778423699452-jingxizishavn1.jpg",
+      "source": "browser-upload",
+      "batchId": "batch_1778423699390",
+      "batchLabel": "批次 2026/5/10 22:34:59",
+      "uploadedAt": "2026-05-10T14:34:59.447Z"
+    },
+    {
+      "id": "asset_1778423699452",
+      "name": "14299ae6-8edf-4fa1-bf0c-a211cdbb1fb1.jfif",
+      "kind": "JFIF",
+      "dimensions": "1200 x 896",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [],
+      "previewUrl": "/uploads/1778423699448-14299ae6-8edf-4fa1-bf0c-a211cdbb1fb1.jfif",
+      "source": "browser-upload",
+      "batchId": "batch_1778423699390",
+      "batchLabel": "批次 2026/5/10 22:34:59",
+      "uploadedAt": "2026-05-10T14:34:59.447Z"
+    },
+    {
+      "id": "asset_1778422790454",
+      "name": "微信图片_20260121215711_49_700.jpg",
+      "kind": "JPG",
+      "dimensions": "4284 x 5712",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [],
+      "previewUrl": "/uploads/1778422790447-----_20260121215711_49_700.jpg",
+      "source": "browser-upload"
+    },
+    {
+      "id": "asset_1778422772375",
+      "name": "jingxizishavn1.jpg",
+      "kind": "JPG",
+      "dimensions": "993 x 1451",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [],
+      "previewUrl": "/uploads/1778422772367-jingxizishavn1.jpg",
+      "source": "browser-upload"
+    },
+    {
+      "id": "asset_01",
+      "name": "sku-hoodie-black-front.png",
+      "kind": "PNG",
+      "dimensions": "2400 x 2400",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [
+        "apparel",
+        "catalog",
+        "transparent-mask"
+      ],
+      "source": "seed"
+    },
+    {
+      "id": "asset_02",
+      "name": "campaign-poster-spring-01.jpg",
+      "kind": "JPG",
+      "dimensions": "3840 x 2160",
+      "status": "review",
+      "statusTone": "amber",
+      "tags": [
+        "campaign",
+        "inpaint",
+        "brand-check"
+      ],
+      "source": "seed"
+    },
+    {
+      "id": "asset_03",
+      "name": "creator-batch-cover-18.webp",
+      "kind": "WEBP",
+      "dimensions": "1280 x 720",
+      "status": "processing",
+      "statusTone": "blue",
+      "tags": [
+        "thumbnail",
+        "batch",
+        "variant-set"
+      ],
+      "source": "seed"
+    },
+    {
+      "id": "asset_04",
+      "name": "archive-scan-1942.tif",
+      "kind": "TIF",
+      "dimensions": "5200 x 3800",
+      "status": "queued",
+      "statusTone": "red",
+      "tags": [
+        "archive",
+        "restore",
+        "high-res"
+      ],
+      "source": "seed"
+    },
+    {
+      "id": "asset_05",
+      "name": "cosmetic-flatlay-07.png",
+      "kind": "PNG",
+      "dimensions": "3000 x 3000",
+      "status": "ready",
+      "statusTone": "green",
+      "tags": [
+        "beauty",
+        "flatlay",
+        "shadow-pass"
+      ],
+      "source": "seed"
+    },
+    {
+      "id": "asset_06",
+      "name": "kitchen-set-batch-b.zip",
+      "kind": "ZIP",
+      "dimensions": "82 images",
+      "status": "ingested",
+      "statusTone": "blue",
+      "tags": [
+        "zip-import",
+        "multi-sku",
+        "scheduled"
+      ],
+      "source": "seed"
+    }
+  ]
+}

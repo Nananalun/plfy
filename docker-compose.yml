@@ -1,0 +1,92 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: frameflow-app
+    ports:
+      - "${APP_PORT:-3001}:3001"
+    environment:
+      NODE_ENV: production
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-}
+      QWEN_IMAGE_WORKER_URL: ${QWEN_IMAGE_WORKER_URL:-http://qwen-worker:8012}
+    volumes:
+      - frameflow-data:/app/data
+      - frameflow-uploads:/app/public/uploads
+      - frameflow-outputs:/app/public/outputs
+    depends_on:
+      qwen-worker:
+        condition: service_started
+      ollama:
+        condition: service_started
+      ollama-pull:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: frameflow-ollama
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: frameflow-ollama-pull
+    depends_on:
+      ollama:
+        condition: service_started
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_VISION_MODEL: ${OLLAMA_VISION_MODEL:-}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        if [ -z "$OLLAMA_VISION_MODEL" ]; then
+          echo "OLLAMA_VISION_MODEL not set, skip pull";
+          exit 0;
+        fi;
+        until ollama list >/dev/null 2>&1; do
+          echo "waiting for ollama...";
+          sleep 3;
+        done;
+        ollama pull "$OLLAMA_VISION_MODEL";
+    volumes:
+      - ollama-data:/root/.ollama
+
+  qwen-worker:
+    build:
+      context: ./workers
+      dockerfile: Dockerfile
+    container_name: frameflow-qwen-worker
+    ports:
+      - "${QWEN_WORKER_PORT:-8012}:8012"
+    environment:
+      QWEN_IMAGE_EDIT_MODEL: ${QWEN_IMAGE_EDIT_MODEL:-Qwen/Qwen-Image-Edit-2511}
+      HF_TOKEN: ${HF_TOKEN:-}
+      QWEN_PRELOAD_MODEL: ${QWEN_PRELOAD_MODEL:-1}
+      QWEN_REQUEST_TIMEOUT_SECONDS: ${QWEN_REQUEST_TIMEOUT_SECONDS:-900}
+      QWEN_MAX_CONCURRENT_REQUESTS: ${QWEN_MAX_CONCURRENT_REQUESTS:-1}
+    volumes:
+      - huggingface-cache:/models/huggingface
+    gpus: all
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8012/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: unless-stopped
+
+volumes:
+  frameflow-data:
+  frameflow-uploads:
+  frameflow-outputs:
+  huggingface-cache:
+  ollama-data:
