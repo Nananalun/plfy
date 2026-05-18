@@ -1,5 +1,7 @@
 export type StatusTone = "green" | "amber" | "blue" | "red";
 
+export type JobItemStatus = "pending" | "running" | "succeeded" | "failed";
+
 export type DashboardMetric = {
   label: string;
   title: string;
@@ -35,6 +37,38 @@ export type Job = {
   prompt?: string;
   quality?: string;
   size?: string;
+  successCount?: number;
+  failedCount?: number;
+  unfinishedCount?: number;
+  pendingCount?: number;
+  runningCount?: number;
+  totalCallCount?: number;
+  successfulCallCount?: number;
+  failedCallCount?: number;
+  autoRetryFailedItems?: boolean;
+  pausedAt?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  heartbeatAt?: string;
+  runnerWorkerId?: string;
+  runnerSlotId?: number;
+  jobItems?: JobItem[];
+};
+
+export type JobItem = {
+  assetId: string;
+  assetName: string;
+  relativePath?: string;
+  status: JobItemStatus;
+  error?: string;
+  endpointUsed?: string;
+  attemptLog?: string[];
+  attemptCount?: number;
+  failedAttemptCount?: number;
+  lastAttemptAt?: string;
+  outputAssetId?: string;
+  startedAt?: string;
+  finishedAt?: string;
 };
 
 export type Workflow = {
@@ -69,6 +103,8 @@ export type Asset = {
   batchId?: string;
   batchLabel?: string;
   uploadedAt?: string;
+  relativePath?: string;
+  sourceAssetId?: string;
 };
 
 export type IngestionChannel = {

@@ -553,6 +553,23 @@ select {
   font-size: 0.82rem;
 }
 
+.folder-summary {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.folder-summary strong {
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
 .picker-card {
   padding: 16px;
   border: 1px solid var(--line);
@@ -624,6 +641,23 @@ select {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.action-form .checkbox-line {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.action-form .checkbox-line input {
+  width: 18px;
+  min-height: 18px;
+  padding: 0;
+}
+
 .action-form textarea {
   min-height: 110px;
   resize: vertical;
@@ -648,6 +682,11 @@ select {
   margin-top: 14px;
 }
 
+.job-table .task-actions {
+  margin-top: 0;
+  gap: 8px;
+}
+
 .primary-button {
   min-height: 44px;
   padding: 0 16px;
@@ -669,6 +708,12 @@ select {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.04);
   cursor: pointer;
+}
+
+.compact-button {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 0.88rem;
 }
 
 .primary-button:disabled {
@@ -695,6 +740,114 @@ select {
 .result-list {
   display: grid;
   gap: 16px;
+}
+
+.task-table-head {
+  align-items: flex-start;
+}
+
+.task-page-tools {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.task-page-tools label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.task-page-tools select {
+  min-height: 38px;
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 0 12px;
+}
+
+.job-table {
+  display: grid;
+  gap: 10px;
+}
+
+.job-table-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 110px 170px 90px minmax(260px, auto);
+  gap: 14px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.job-table-row-head {
+  padding-block: 10px;
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+  font-size: 0.86rem;
+}
+
+.job-main-cell {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.job-main-cell strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-cell {
+  display: grid;
+  gap: 6px;
+}
+
+.compact-progress {
+  height: 8px;
+}
+
+.task-progress-bar {
+  position: relative;
+}
+
+.task-progress-bar span {
+  position: absolute;
+  inset-block: 0;
+}
+
+.task-progress-success {
+  left: 0;
+}
+
+.task-progress-rendering {
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(255, 184, 92, 0.96), rgba(255, 211, 143, 0.96)) !important;
+}
+
+.job-detail-panel {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.job-detail-panel summary {
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.compact-prompt {
+  padding: 0;
+}
+
+.task-pagination {
+  margin-top: 16px;
+  justify-content: flex-end;
 }
 
 .result-card {
@@ -726,16 +879,71 @@ select {
 }
 
 .result-prompt {
-  margin: 12px 0 0;
+  margin: 0;
   color: var(--muted);
   line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.result-prompt-details {
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+}
+
+.result-prompt-summary {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.result-prompt-summary::-webkit-details-marker {
+  display: none;
+}
+
+.result-prompt-summary::after {
+  content: "Show full prompt";
+  color: var(--accent);
+  font-size: 0.9rem;
+}
+
+.result-prompt-details[open] .result-prompt-summary::after {
+  content: "Hide full prompt";
+}
+
+.result-prompt-clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.result-prompt-body {
+  padding: 0 16px 16px;
+}
+
+.result-preview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .result-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 14px;
   margin-top: 16px;
+}
+
+.result-grid-compact {
+  grid-template-columns: minmax(160px, 220px);
 }
 
 .result-thumb-card {
@@ -747,6 +955,7 @@ select {
 }
 
 .result-thumb {
+  position: relative;
   aspect-ratio: 1 / 1;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.03);
@@ -853,6 +1062,15 @@ select {
   .result-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .job-table-row {
+    grid-template-columns: minmax(240px, 1fr) 100px 150px;
+  }
+
+  .job-table-row > :nth-child(4),
+  .job-table-row > :nth-child(5) {
+    grid-column: span 1;
+  }
 }
 
 @media (max-width: 980px) {
@@ -880,6 +1098,15 @@ select {
 
   .table-row {
     grid-template-columns: 1fr;
+  }
+
+  .job-table-row,
+  .job-table-row-head {
+    grid-template-columns: 1fr;
+  }
+
+  .job-table-row-head {
+    display: none;
   }
 
   .result-grid {

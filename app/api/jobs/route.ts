@@ -1,21 +1,32 @@
 import { NextResponse } from "next/server";
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { executeJob } from "@/lib/job-runner";
+import { toJobListItem } from "@/lib/job-list-view";
+import { createJob, getAssetsByBatchId, getAssetsByIds, getResultAssetSummariesByJobIds, listJobs } from "@/lib/mock-store";
+import type { JobItem } from "@/lib/platform-types";
 import { getQueueLanes } from "@/lib/platform-data";
-import { createAsset, createJob, getAssetsByIds, listJobs, updateJob } from "@/lib/mock-store";
-import { runDashScopeImageJob } from "@/lib/dashscope-image-runner";
-import { runLocalImageJob } from "@/lib/local-image-runner";
-import { runOllamaTranslationJob } from "@/lib/ollama-translation-runner";
-import { runOpenAIImageJob } from "@/lib/openai-image-runner";
-import { runGeminiTranslationJob } from "@/lib/gemini-translation-runner";
-import { runOpenAITranslationJob } from "@/lib/openai-translation-runner";
-import { getOllamaConfig, getProviderSecret } from "@/lib/provider-secrets";
-import { runQwenImageEditJob } from "@/lib/qwen-image-edit-runner";
-import { renderTranslationOverlay } from "@/lib/translation-overlay";
 
-export function GET() {
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const pageParam = Number.parseInt(url.searchParams.get("page") ?? "1", 10);
+  const pageSizeParam = Number.parseInt(url.searchParams.get("pageSize") ?? "15", 10);
+  const page = Math.max(1, Number.isFinite(pageParam) ? pageParam : 1);
+  const pageSize = Math.max(1, Math.min(100, Number.isFinite(pageSizeParam) ? pageSizeParam : 15));
+  const allJobs = listJobs();
+  const totalCount = allJobs.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const jobs = allJobs.slice(startIndex, startIndex + pageSize);
+  const jobIds = jobs.map((job) => job.id);
+  const includeResultSummaries = url.searchParams.get("includeResultSummaries") === "1";
+
   return NextResponse.json({
-    jobs: listJobs(),
+    jobs: jobs.map(toJobListItem),
+    resultSummaries: includeResultSummaries ? getResultAssetSummariesByJobIds(jobIds, 1) : [],
+    page: safePage,
+    pageSize,
+    totalCount,
+    totalPages,
     lanes: getQueueLanes(),
   });
 }
@@ -35,276 +46,90 @@ export async function POST(request: Request) {
     prompt?: string;
     quality?: string;
     size?: string;
+    batchId?: string;
+    autoRetryFailedItems?: boolean;
+    groupByTopLevelFolder?: boolean;
   };
 
+  const name = body.name?.trim();
+  const workflowName = body.workflowName?.trim();
+  const routingPolicy = body.routingPolicy?.trim();
+  const prompt = body.prompt?.trim();
+  const model = body.model?.trim();
+  const batchId = body.batchId?.trim();
+
   if (
-    !body.name ||
-    !body.workflowName ||
-    !body.itemCount ||
-    !body.routingPolicy ||
-    !Array.isArray(body.assetIds) ||
-    body.assetIds.length === 0 ||
+    !name ||
+    !workflowName ||
+    !routingPolicy ||
+    (!Array.isArray(body.assetIds) && !batchId) ||
+    ((body.assetIds?.length ?? 0) === 0 && !batchId) ||
     !body.taskType ||
     !body.providerModelFamily ||
     !(
       body.taskType === "translate-zh-en"
-        ? body.prompt && body.model && body.providerModelFamily !== "local"
+        ? prompt && model && body.providerModelFamily !== "local"
         : body.provider === "openai" || body.providerModelFamily === "dashscope" || body.providerModelFamily === "qwen-local"
-          ? body.prompt && body.model
+          ? prompt && model
           : body.preset
     )
   ) {
     return NextResponse.json({ error: "Missing required fields." }, { status: 400 });
   }
 
-  const job = createJob({
-    name: body.name,
-    workflowName: body.workflowName,
-    itemCount: Number(body.itemCount),
-    routingPolicy: body.routingPolicy,
-    assetIds: body.assetIds,
-    preset: body.preset,
-    provider: body.provider ?? "local",
-    taskType: body.taskType,
-    providerModelFamily: body.providerModelFamily,
-    model: body.model,
-    prompt: body.prompt,
-    quality: body.quality,
-    size: body.size,
-  });
-
-  const assets = getAssetsByIds(body.assetIds).filter((asset) => asset.previewUrl);
-
+  const requestedAssetIds = Array.isArray(body.assetIds) ? body.assetIds : [];
+  const assetsFromIds = getAssetsByIds(requestedAssetIds).filter((asset) => asset.previewUrl);
+  const assets =
+    assetsFromIds.length > 0
+      ? assetsFromIds
+      : batchId
+        ? getAssetsByBatchId(batchId).filter((asset) => asset.previewUrl)
+        : [];
   if (assets.length === 0) {
-    updateJob(job.id, {
-      status: "failed",
-      statusTone: "red",
-      progress: 100,
-    });
     return NextResponse.json(
       { error: "Selected assets do not have local files to process." },
       { status: 400 },
     );
   }
 
-  updateJob(job.id, {
-    status: "running",
-    statusTone: "blue",
-    progress: 20,
+  const groups = new Map<string, typeof assets>();
+  for (const asset of assets) {
+    const relativePath = asset.relativePath?.replaceAll("\\", "/") ?? "";
+    const topLevelFolder = relativePath.includes("/") ? relativePath.split("/")[0] : "";
+    const groupName = body.groupByTopLevelFolder && topLevelFolder ? topLevelFolder : "";
+    groups.set(groupName, [...(groups.get(groupName) ?? []), asset]);
+  }
+
+  const createdJobs = Array.from(groups.entries()).map(([groupName, groupAssets]) => {
+    const jobItems: JobItem[] = groupAssets.map((asset) => ({
+      assetId: asset.id,
+      assetName: asset.name,
+      relativePath: asset.relativePath,
+      status: "pending",
+    }));
+
+    return createJob({
+      name: groupName || name,
+      workflowName,
+      itemCount: groupAssets.length,
+      routingPolicy,
+      assetIds: groupAssets.map((asset) => asset.id),
+      preset: body.preset,
+      provider: body.provider ?? "local",
+      taskType: body.taskType,
+      providerModelFamily: body.providerModelFamily,
+      model,
+      prompt,
+      quality: body.quality,
+      size: body.size,
+      autoRetryFailedItems: body.autoRetryFailedItems ?? true,
+      jobItems,
+    });
   });
 
-  try {
-    const outputDir = path.join(process.cwd(), "public", "outputs");
-    await mkdir(outputDir, { recursive: true });
-    let outputCount = 0;
-
-    if (body.taskType === "translate-zh-en") {
-      const analysis =
-        body.providerModelFamily === "gemini"
-          ? await runGeminiTranslationJob({
-              assets,
-              model: body.model ?? "gemini-2.5-flash",
-              prompt: body.prompt ?? "",
-            })
-          : await runOpenAITranslationJob({
-              assets,
-              model: body.model ?? "gpt-4.1-mini",
-              prompt: body.prompt ?? "",
-            });
-
-      for (const item of analysis.items) {
-        const output = await renderTranslationOverlay({
-          jobId: job.id,
-          inputPath: path.join(process.cwd(), "public", item.asset.previewUrl!.replace(/^\//, "")),
-          outputName: `${job.id}-${item.asset.id}-translated.png`,
-          blocks: item.blocks,
-        });
-
-        createAsset({
-          name: output.name,
-          kind: pathExtToKind(output.name),
-          dimensions: output.dimensions,
-          tags: output.tags,
-          previewUrl: output.previewUrl,
-          source: `job:${job.id}`,
-        });
-        outputCount += 1;
-      }
-    } else if (body.taskType === "redraw-translate-zh-en") {
-      const prompts = await buildRedrawPrompts(assets, body.prompt ?? "");
-
-      for (const asset of assets) {
-        const result =
-          body.providerModelFamily === "qwen-local"
-            ? await runQwenImageEditJob({
-                assets: [asset],
-                prompt: prompts.get(asset.id) ?? createBaseRedrawPrompt(body.prompt ?? ""),
-                model: body.model ?? "Qwen/Qwen-Image-Edit-2511",
-              })
-            : body.providerModelFamily === "dashscope"
-            ? await runDashScopeImageJob({
-                assets: [asset],
-                prompt: prompts.get(asset.id) ?? createBaseRedrawPrompt(body.prompt ?? ""),
-                model: body.model ?? "wan2.7-image-pro",
-                size: body.size ?? "auto",
-              })
-            : body.provider === "openai"
-              ? await runOpenAIImageJob({
-                  assets: [asset],
-                  prompt: prompts.get(asset.id) ?? createBaseRedrawPrompt(body.prompt ?? ""),
-                  model: body.model ?? "gpt-image-1",
-                  quality: body.quality ?? "high",
-                  size: body.size ?? "auto",
-                })
-              : await runLocalImageJob({
-                  jobId: job.id,
-                  preset: body.preset ?? "commerce-enhance",
-                  assets: [asset],
-                });
-
-        for (const output of result.outputs) {
-          if ("bytes" in output) {
-            await writeFile(path.join(outputDir, output.name), output.bytes);
-          }
-
-          createAsset({
-            name: output.name,
-            kind: pathExtToKind(output.name),
-            dimensions: output.dimensions,
-            tags: output.tags,
-            previewUrl: output.previewUrl,
-            source: `job:${job.id}`,
-          });
-        }
-
-        outputCount += result.outputs.length;
-      }
-    } else {
-      const result = await runLocalImageJob({
-        jobId: job.id,
-        preset: body.preset ?? "commerce-enhance",
-        assets,
-      });
-
-      for (const output of result.outputs) {
-        if ("bytes" in output) {
-          await writeFile(path.join(outputDir, output.name), output.bytes);
-        }
-
-        createAsset({
-          name: output.name,
-          kind: pathExtToKind(output.name),
-          dimensions: output.dimensions,
-          tags: output.tags,
-          previewUrl: output.previewUrl,
-          source: `job:${job.id}`,
-        });
-      }
-      outputCount = result.outputs.length;
-    }
-
-    const updatedJob = updateJob(job.id, {
-      status: "succeeded",
-      statusTone: "green",
-      progress: 100,
-      outputCount,
-    });
-
-    return NextResponse.json({ job: updatedJob }, { status: 201 });
-  } catch (error) {
-    updateJob(job.id, {
-      status: "failed",
-      statusTone: "red",
-      progress: 100,
-    });
-
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Job execution failed.",
-      },
-      { status: 500 },
-    );
-  }
-}
-
-function pathExtToKind(filename: string) {
-  const match = filename.split(".").pop();
-  return match ? match.toUpperCase() : "FILE";
-}
-
-function createBaseRedrawPrompt(userPrompt: string) {
-  return [
-    "Edit this existing image, not a new concept.",
-    "Replace all visible Chinese text with natural English.",
-    "Keep the original composition, layout, subject, background, spacing, hierarchy, colors, and visual style as close to the source image as possible.",
-    "Do not add unrelated objects, logos, decorations, or extra text.",
-    "Do not keep any Chinese characters in the final image.",
-    "Make the final result look like a clean production-ready English version of the original.",
-    userPrompt ? `Additional user instructions: ${userPrompt}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-async function buildRedrawPrompts(assets: ReturnType<typeof getAssetsByIds>, userPrompt: string) {
-  const prompts = new Map<string, string>();
-  const fallbackPrompt = createBaseRedrawPrompt(userPrompt);
-
-  for (const asset of assets) {
-    prompts.set(asset.id, fallbackPrompt);
+  for (const job of createdJobs) {
+    executeJob(job.id);
   }
 
-  try {
-    const ollamaConfig = getOllamaConfig();
-    const analysis = ollamaConfig.visionModel
-      ? await runOllamaTranslationJob({
-          assets,
-          model: ollamaConfig.visionModel,
-          prompt: "Identify every visible Chinese text block and translate it into concise natural English.",
-        })
-      : getProviderSecret("openai")
-      ? await runOpenAITranslationJob({
-          assets,
-          model: "gpt-4.1-mini",
-          prompt: "Identify every visible Chinese text block and translate it into concise natural English.",
-        })
-      : getProviderSecret("gemini")
-        ? await runGeminiTranslationJob({
-            assets,
-            model: "gemini-2.5-flash",
-            prompt: "Identify every visible Chinese text block and translate it into concise natural English.",
-          })
-        : null;
-
-    for (const item of analysis?.items ?? []) {
-      const replacements = item.blocks
-        .map((block) => [block.source_text?.trim(), block.translated_text?.trim()] as const)
-        .filter(([source, translated]) => source && translated);
-
-      if (!replacements.length) {
-        continue;
-      }
-
-      const replacementList = Array.from(
-        new Map(replacements.map(([source, translated]) => [`${source}=>${translated}`, { source, translated }])).values(),
-      )
-        .map(({ source, translated }) => `- "${source}" -> "${translated}"`)
-        .join("\n");
-
-      prompts.set(
-        item.asset.id,
-        [
-          fallbackPrompt,
-          "Use these exact text replacements for this image:",
-          replacementList,
-          "If a Chinese text block appears multiple times, translate all of them consistently.",
-          "Preserve approximate text placement and visual hierarchy from the original image.",
-        ].join("\n"),
-      );
-    }
-  } catch {
-    return prompts;
-  }
-
-  return prompts;
+  return NextResponse.json({ job: createdJobs[0], jobs: createdJobs }, { status: 201 });
 }

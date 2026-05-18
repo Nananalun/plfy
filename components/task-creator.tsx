@@ -1,45 +1,125 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
-import type { Asset } from "@/lib/platform-types";
+import { useEffect, useRef, useState } from "react";
+import type { Asset, Job } from "@/lib/platform-types";
 
 type ProviderFamily = "dashscope" | "openai" | "qwen-local";
+type BrowserFile = File & { webkitRelativePath?: string };
 
 const defaults = {
   prompt:
-    "保留原图的主体、构图、版式、层级、色彩和风格，只把图片中的中文改成自然英文。不要添加无关元素，不要改变产品、人物或背景，不要保留任何中文字符。",
+    "Keep the original layout, subject, composition, colors, and visual style. Only replace visible Chinese text with natural English. Do not add unrelated elements or change the product, people, or background.",
   providerModelFamily: "qwen-local" as ProviderFamily,
   model: "Qwen/Qwen-Image-Edit-2511",
   size: "auto",
 };
 
-export function TaskCreator({ assets }: { assets: Asset[] }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+const directoryInputProps = {
+  directory: "",
+  webkitdirectory: "",
+} as unknown as React.InputHTMLAttributes<HTMLInputElement>;
+
+const selectionStorageKey = "frameflow-task-selection";
+
+function topLevelFolder(relativePath: string) {
+  const normalized = relativePath.replaceAll("\\", "/");
+  const parts = normalized.split("/").filter(Boolean);
+  return parts.length > 1 ? parts[0] : "(root files)";
+}
+
+function summarizePaths(paths: string[]) {
+  const counts = new Map<string, number>();
+  for (const path of paths) {
+    const folder = topLevelFolder(path);
+    counts.set(folder, (counts.get(folder) ?? 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, count]) => ({ name, count }));
+}
+
+function formatFolderSummary(summary: Array<{ name: string; count: number }>) {
+  if (!summary.length) {
+    return "";
+  }
+
+  return summary.map((item) => `${item.name}: ${item.count}`).join(", ");
+}
+
+export function TaskCreator({ onJobCreated }: { onJobCreated?: (job: Job) => void | Promise<void> }) {
+  const [isPending, setIsPending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [uploadError, setUploadError] = useState("");
   const [uploadStatus, setUploadStatus] = useState("");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [selectedFileCount, setSelectedFileCount] = useState(0);
-  const [files, setFiles] = useState<FileList | null>(null);
+  const [selectedAssetPaths, setSelectedAssetPaths] = useState<string[]>([]);
+  const [selectedBatchId, setSelectedBatchId] = useState("");
   const [uploadTags, setUploadTags] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<BrowserFile[]>([]);
+  const [groupByFolder, setGroupByFolder] = useState(true);
   const [form, setForm] = useState(defaults);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const folderInputRef = useRef<HTMLInputElement | null>(null);
 
-  const processableAssets = useMemo(
-    () =>
-      assets.filter(
-        (asset) =>
-          asset.previewUrl &&
-          ["PNG", "JPG", "JPEG", "WEBP", "TIFF", "TIF"].includes(asset.kind.toUpperCase()),
-      ),
-    [assets],
-  );
+  useEffect(() => {
+    const raw = window.sessionStorage.getItem(selectionStorageKey);
+    if (!raw) {
+      return;
+    }
+
+    try {
+      const saved = JSON.parse(raw) as { assetIds?: string[]; assetPaths?: string[]; batchId?: string };
+      setSelectedIds(Array.isArray(saved.assetIds) ? saved.assetIds : []);
+      setSelectedAssetPaths(Array.isArray(saved.assetPaths) ? saved.assetPaths : []);
+      setSelectedBatchId(saved.batchId ?? "");
+    } catch {
+      window.sessionStorage.removeItem(selectionStorageKey);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedIds.length === 0 && !selectedBatchId) {
+      window.sessionStorage.removeItem(selectionStorageKey);
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      selectionStorageKey,
+      JSON.stringify({
+        assetIds: selectedIds,
+        assetPaths: selectedAssetPaths,
+        batchId: selectedBatchId,
+      }),
+    );
+  }, [selectedAssetPaths, selectedBatchId, selectedIds]);
+
+  function appendFiles(fileList: FileList | null) {
+    if (!fileList?.length) {
+      return;
+    }
+
+    const incoming = Array.from(fileList) as BrowserFile[];
+    setUploadError("");
+    setUploadStatus("");
+    setSelectedFiles((current) => {
+      const seen = new Set(current.map((file) => `${file.webkitRelativePath || file.name}:${file.size}`));
+      const merged = [...current];
+      for (const file of incoming) {
+        const key = `${file.webkitRelativePath || file.name}:${file.size}`;
+        if (!seen.has(key)) {
+          merged.push(file);
+          seen.add(key);
+        }
+      }
+      return merged;
+    });
+  }
 
   async function handleUpload() {
-    if (!files?.length) {
-      setUploadError("请先选择图片。");
+    if (!selectedFiles.length) {
+      setUploadError("Select files or a folder first.");
       return;
     }
 
@@ -48,44 +128,66 @@ export function TaskCreator({ assets }: { assets: Asset[] }) {
     setUploading(true);
 
     const formData = new FormData();
-    for (const file of Array.from(files)) {
+    for (const file of selectedFiles) {
       formData.append("file", file);
+      formData.append("relativePath", file.webkitRelativePath || file.name);
     }
     formData.append("tags", uploadTags);
 
-    const response = await fetch("/api/assets", {
-      method: "POST",
-      body: formData,
-    });
+    try {
+      const response = await fetch("/api/assets", {
+        method: "POST",
+        body: formData,
+      });
 
-    const result = (await response.json()) as {
-      error?: string;
-      items?: Array<{ id: string }>;
-      batchLabel?: string;
-    };
+      const result = (await response.json()) as {
+        error?: string;
+        items?: Array<Pick<Asset, "id" | "relativePath" | "name">>;
+        batchId?: string;
+        batchLabel?: string;
+      };
 
-    setUploading(false);
+      if (!response.ok || !result.items?.length) {
+        setUploadError(result.error ?? "Upload failed.");
+        return;
+      }
 
-    if (!response.ok || !result.items?.length) {
-      setUploadError(result.error ?? "上传失败。");
-      return;
+      const uploadedPaths = result.items.map((item) => item.relativePath || item.name);
+      setSelectedIds(result.items.map((item) => item.id));
+      setSelectedAssetPaths(uploadedPaths);
+      setSelectedBatchId(result.batchId ?? "");
+      setUploadStatus(
+        `Uploaded ${result.items.length} file(s)${
+          result.batchLabel ? ` from ${result.batchLabel}` : ""
+        }. ${formatFolderSummary(summarizePaths(uploadedPaths))}`,
+      );
+      setSelectedFiles([]);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      if (folderInputRef.current) {
+        folderInputRef.current.value = "";
+      }
+    } catch {
+      setUploadError("Upload request failed. Check the network or server logs.");
+    } finally {
+      setUploading(false);
     }
-
-    setSelectedIds(result.items.map((item) => item.id));
-    setUploadStatus(
-      `上传成功：${result.items.length} 张，已自动选中${result.batchLabel ? `（${result.batchLabel}）` : ""}。`,
-    );
-    setSelectedFileCount(0);
-    setFiles(null);
-    startTransition(() => router.refresh());
   }
 
   async function handleSubmit() {
     setError("");
 
+    if (selectedIds.length === 0 && !selectedBatchId) {
+      setError("Upload images first.");
+      return;
+    }
+
+    setIsPending(true);
+
     const payload = {
-      name: `批量生成 ${new Date().toLocaleString("zh-CN", { hour12: false })}`,
-      workflowName: "批量重绘",
+      name: `Batch ${new Date().toLocaleString("zh-CN", { hour12: false })}`,
+      workflowName: "Batch Translation Redraw",
       itemCount: selectedIds.length,
       routingPolicy: "quality-first",
       provider: form.providerModelFamily === "openai" ? "openai" : "local",
@@ -96,73 +198,100 @@ export function TaskCreator({ assets }: { assets: Asset[] }) {
       quality: "high",
       size: form.size,
       assetIds: selectedIds,
+      batchId: selectedBatchId,
+      autoRetryFailedItems: true,
+      groupByTopLevelFolder: groupByFolder,
     };
 
-    const response = await fetch("/api/jobs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    try {
+      const response = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    if (!response.ok) {
-      const result = (await response.json()) as { error?: string };
-      setError(result.error ?? "生成失败。");
-      return;
+      if (!response.ok) {
+        const result = (await response.json()) as { error?: string };
+        setError(result.error ?? "Job creation failed.");
+        return;
+      }
+
+      const result = (await response.json()) as { job?: Job; jobs?: Job[] };
+
+      setSelectedIds([]);
+      setSelectedAssetPaths([]);
+      setSelectedBatchId("");
+      setUploadStatus("");
+      setForm(defaults);
+      window.sessionStorage.removeItem(selectionStorageKey);
+      await onJobCreated?.(result.jobs?.[0] ?? result.job!);
+    } catch {
+      setError("Job creation request failed. Check the network or server logs.");
+    } finally {
+      setIsPending(false);
     }
-
-    setSelectedIds([]);
-    setUploadStatus("");
-    setForm(defaults);
-    startTransition(() => router.refresh());
   }
 
-  function selectLatestBatch() {
-    const latestBatchId = processableAssets
-      .filter((asset) => asset.batchId)
-      .sort((a, b) => (b.uploadedAt ?? "").localeCompare(a.uploadedAt ?? ""))[0]?.batchId;
-
-    if (!latestBatchId) {
-      return;
-    }
-
-    setSelectedIds(processableAssets.filter((asset) => asset.batchId === latestBatchId).map((asset) => asset.id));
-  }
+  const pendingFolderSummary = summarizePaths(selectedFiles.map((file) => file.webkitRelativePath || file.name));
+  const uploadedFolderSummary = summarizePaths(selectedAssetPaths);
 
   return (
     <div className="action-form">
       <div className="picker-card">
         <div className="picker-head">
-          <strong>上传图片</strong>
-          <span>{selectedFileCount ? `已选 ${selectedFileCount} 个文件` : "支持一次上传多张图片"}</span>
+          <strong>Upload Images</strong>
+          <span>
+            {selectedFiles.length
+              ? `${selectedFiles.length} file(s) selected`
+              : "Choose files or a full folder tree"}
+          </span>
         </div>
         <div className="form-grid">
           <label className="field-span-2">
-            <span>选择图片</span>
+            <span>Files</span>
             <input
+              ref={fileInputRef}
               type="file"
               multiple
               accept="image/*,.webp,.png,.jpg,.jpeg,.tif,.tiff"
               onChange={(event) => {
-                setFiles(event.target.files);
-                setSelectedFileCount(event.target.files?.length ?? 0);
+                appendFiles(event.target.files);
+                event.currentTarget.value = "";
               }}
             />
           </label>
           <label className="field-span-2">
-            <span>标签</span>
+            <span>Folder</span>
+            <input
+              {...directoryInputProps}
+              ref={folderInputRef}
+              type="file"
+              multiple
+              accept="image/*,.webp,.png,.jpg,.jpeg,.tif,.tiff"
+              onChange={(event) => {
+                appendFiles(event.target.files);
+                event.currentTarget.value = "";
+              }}
+            />
+          </label>
+          <label className="field-span-2">
+            <span>Tags</span>
             <input
               value={uploadTags}
               onChange={(event) => setUploadTags(event.target.value)}
-              placeholder="可选，用逗号分隔"
+              placeholder="Optional, comma separated"
             />
           </label>
         </div>
+        {pendingFolderSummary.length ? (
+          <div className="folder-summary">
+            <strong>Pending upload</strong>
+            <span>{formatFolderSummary(pendingFolderSummary)}</span>
+          </div>
+        ) : null}
         <div className="form-footer">
           <button type="button" className="primary-button" onClick={() => void handleUpload()} disabled={uploading}>
-            {uploading ? "上传中..." : "上传并自动选中"}
-          </button>
-          <button type="button" className="secondary-button" onClick={selectLatestBatch}>
-            选择最近上传批次
+            {uploading ? "Uploading..." : "Upload and select"}
           </button>
           {uploadStatus ? <p className="form-hint">{uploadStatus}</p> : null}
           {uploadError ? <p className="form-error">{uploadError}</p> : null}
@@ -171,7 +300,7 @@ export function TaskCreator({ assets }: { assets: Asset[] }) {
 
       <div className="form-grid">
         <label>
-          <span>模型提供方</span>
+          <span>Provider</span>
           <select
             value={form.providerModelFamily}
             onChange={(event) => {
@@ -181,7 +310,7 @@ export function TaskCreator({ assets }: { assets: Asset[] }) {
                 providerModelFamily,
                 model:
                   providerModelFamily === "openai"
-                    ? "gpt-image-1"
+                    ? "gpt-image-2"
                     : providerModelFamily === "dashscope"
                       ? "wan2.7-image-pro"
                       : "Qwen/Qwen-Image-Edit-2511",
@@ -189,13 +318,13 @@ export function TaskCreator({ assets }: { assets: Asset[] }) {
               }));
             }}
           >
-            <option value="qwen-local">Qwen 本地编辑</option>
-            <option value="dashscope">通义万相</option>
-            <option value="openai">OpenAI</option>
+            <option value="qwen-local">Qwen local</option>
+            <option value="dashscope">DashScope</option>
+            <option value="openai">OpenAI compatible</option>
           </select>
         </label>
         <label>
-          <span>模型</span>
+          <span>Model</span>
           <select
             value={form.model}
             onChange={(event) => setForm((current) => ({ ...current, model: event.target.value }))}
@@ -207,14 +336,18 @@ export function TaskCreator({ assets }: { assets: Asset[] }) {
                 <option value="wanx2.0-imageedit">wanx2.0-imageedit</option>
               </>
             ) : form.providerModelFamily === "openai" ? (
-              <option value="gpt-image-1">gpt-image-1</option>
+              <>
+                <option value="gpt-image-2">gpt-image-2</option>
+                <option value="gpt-image-1.5">gpt-image-1.5</option>
+                <option value="gpt-image-1">gpt-image-1</option>
+              </>
             ) : (
               <option value="Qwen/Qwen-Image-Edit-2511">Qwen/Qwen-Image-Edit-2511</option>
             )}
           </select>
         </label>
         <label>
-          <span>输出尺寸</span>
+          <span>Output size</span>
           <select
             value={form.size}
             onChange={(event) => setForm((current) => ({ ...current, size: event.target.value }))}
@@ -239,15 +372,32 @@ export function TaskCreator({ assets }: { assets: Asset[] }) {
           </select>
         </label>
         <label>
-          <span>已选图片</span>
-          <input value={`${selectedIds.length} 张`} readOnly />
+          <span>Selected assets</span>
+          <input value={`${selectedIds.length} file(s)${selectedBatchId ? " selected" : ""}`} readOnly />
+        </label>
+        {uploadedFolderSummary.length ? (
+          <label className="field-span-2">
+            <span>Selected folders</span>
+            <textarea value={formatFolderSummary(uploadedFolderSummary)} readOnly />
+          </label>
+        ) : null}
+        <label>
+          <span>Batch mode</span>
+          <div className="checkbox-line">
+            <input
+              type="checkbox"
+              checked={groupByFolder}
+              onChange={(event) => setGroupByFolder(event.target.checked)}
+            />
+            <span>One job per top-level folder</span>
+          </div>
         </label>
         <label className="field-span-2">
-          <span>提示词</span>
+          <span>Prompt</span>
           <textarea
             value={form.prompt}
             onChange={(event) => setForm((current) => ({ ...current, prompt: event.target.value }))}
-            placeholder="例如：把图片中的中文改成自然英文，保持原排版和风格。"
+            placeholder="Describe how the Chinese text should be translated and how faithfully the layout should be preserved."
           />
         </label>
       </div>
@@ -256,10 +406,10 @@ export function TaskCreator({ assets }: { assets: Asset[] }) {
         <button
           type="button"
           className="primary-button"
-          disabled={isPending || selectedIds.length === 0}
+          disabled={isPending || (selectedIds.length === 0 && !selectedBatchId)}
           onClick={() => void handleSubmit()}
         >
-          {isPending ? "生成中..." : "开始批量生成"}
+          {isPending ? "Creating..." : "Start batch job"}
         </button>
         {error ? <p className="form-error">{error}</p> : null}
       </div>

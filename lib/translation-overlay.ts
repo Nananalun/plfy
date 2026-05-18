@@ -49,16 +49,20 @@ export async function renderTranslationOverlay({
   jobId,
   inputPath,
   outputName,
+  outputRelativePath,
   blocks,
 }: {
   jobId: string;
   inputPath: string;
   outputName: string;
+  outputRelativePath?: string;
   blocks: TranslationBlock[];
 }) {
   const outputDir = path.join(process.cwd(), "public", "outputs");
   await mkdir(outputDir, { recursive: true });
-  const outputPath = path.join(outputDir, outputName);
+  const finalRelativePath = outputRelativePath ?? outputName;
+  const outputPath = path.join(outputDir, ...finalRelativePath.split("/"));
+  await mkdir(path.dirname(outputPath), { recursive: true });
   const image = sharp(inputPath);
   const metadata = await image.metadata();
   const width = metadata.width ?? 0;
@@ -108,7 +112,7 @@ export async function renderTranslationOverlay({
 
   return {
     name: outputName,
-    previewUrl: `/outputs/${outputName}`,
+    previewUrl: `/outputs/${finalRelativePath}`,
     dimensions: `${width} x ${height}`,
     tags: ["result", "translation", jobId],
   };

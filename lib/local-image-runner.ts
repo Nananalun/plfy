@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import { buildOutputName } from "@/lib/output-naming";
 import type { Asset } from "@/lib/platform-types";
 
 type RunInput = {
@@ -53,9 +54,10 @@ export async function runLocalImageJob({ jobId, preset, assets }: RunInput): Pro
     }
 
     const inputPath = path.join(process.cwd(), "public", asset.previewUrl.replace(/^\//, ""));
-    const extension = path.extname(inputPath) || ".jpg";
-    const outputName = `${jobId}-${asset.id}${extension}`;
-    const outputPath = path.join(outputDir, outputName);
+    const extension = (path.extname(inputPath) || ".jpg").replace(/^\./, "");
+    const outputName = buildOutputName(asset, "translated", extension);
+    const outputPath = path.join(outputDir, jobId, outputName);
+    await mkdir(path.dirname(outputPath), { recursive: true });
     const pipeline = sharp(inputPath);
     const processed = await applyPreset(pipeline, preset);
     await processed.toFile(outputPath);
@@ -63,7 +65,7 @@ export async function runLocalImageJob({ jobId, preset, assets }: RunInput): Pro
     const metadata = await sharp(outputPath).metadata();
     outputs.push({
       name: outputName,
-      previewUrl: `/outputs/${outputName}`,
+      previewUrl: `/outputs/${jobId}/${outputName}`,
       dimensions: `${metadata.width ?? 0} x ${metadata.height ?? 0}`,
       tags: ["result", preset, jobId],
     });

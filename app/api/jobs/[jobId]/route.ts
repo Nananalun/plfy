@@ -4,6 +4,12 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { deleteAssetsBySource, deleteJob, getAssetsBySource, getJobById } from "@/lib/mock-store";
 
+function resolvePublicAssetPath(previewUrl: string) {
+  const publicDir = path.join(process.cwd(), "public");
+  const filePath = path.resolve(publicDir, previewUrl.replace(/^\//, ""));
+  return filePath.startsWith(publicDir + path.sep) ? filePath : undefined;
+}
+
 export async function DELETE(
   _request: Request,
   context: { params: Promise<{ jobId: string }> },
@@ -12,7 +18,7 @@ export async function DELETE(
   const job = getJobById(jobId);
 
   if (!job) {
-    return NextResponse.json({ error: "任务不存在。" }, { status: 404 });
+    return NextResponse.json({ error: "Job not found." }, { status: 404 });
   }
 
   const outputs = getAssetsBySource(`job:${jobId}`);
@@ -21,8 +27,8 @@ export async function DELETE(
       continue;
     }
 
-    const filePath = path.join(process.cwd(), "public", asset.previewUrl.replace(/^\//, ""));
-    if (existsSync(filePath)) {
+    const filePath = resolvePublicAssetPath(asset.previewUrl);
+    if (filePath && existsSync(filePath)) {
       await rm(filePath, { force: true });
     }
   }

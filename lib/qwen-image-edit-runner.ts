@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Asset } from "@/lib/platform-types";
+import { buildOutputName } from "@/lib/output-naming";
 import { getQwenImageWorkerUrl } from "@/lib/provider-secrets";
 
 type RunInput = {
@@ -65,7 +66,7 @@ export async function runQwenImageEditJob({
     }
 
     const ext = (result.format ?? "png").replace(/^\./, "").toLowerCase();
-    const outputName = `${Date.now()}-${asset.id}-qwen.${ext}`;
+    const outputName = buildOutputName(asset, "translated", ext);
 
     outputs.push({
       name: outputName,

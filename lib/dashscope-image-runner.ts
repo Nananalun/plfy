@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Asset } from "@/lib/platform-types";
+import { buildOutputName } from "@/lib/output-naming";
 import { getProviderSecret } from "@/lib/provider-secrets";
 
 type RunInput = {
@@ -253,7 +254,7 @@ export async function runDashScopeImageJob({
       : await runWanx21Edit({ asset, prompt, model, apiKey });
 
     const outputBytes = await downloadImageBytes(result.imageUrl);
-    const outputName = `${Date.now()}-${asset.id}-dashscope.png`;
+    const outputName = buildOutputName(asset, "translated", "png");
 
     outputs.push({
       name: outputName,
