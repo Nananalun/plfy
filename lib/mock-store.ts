@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Asset, Job, JobItem, ModelDefinition, Workflow } from "@/lib/platform-types";
@@ -70,8 +70,11 @@ const writeLockFile = path.join(dataDir, "frameflow-store.write.lock");
 const outputsDir = path.join(process.cwd(), "public", "outputs");
 const WRITE_LOCK_TIMEOUT_MS = 10_000;
 const WRITE_LOCK_RETRY_MS = 25;
+const READ_RETRY_ATTEMPTS = 12;
 const ATOMIC_RENAME_RETRY_MS = 50;
 const ATOMIC_RENAME_MAX_ATTEMPTS = 8;
+const BACKUP_WRITE_INTERVAL_MS = 60_000;
+let lastBackupWriteAt = 0;
 
 function sleepSync(ms: number) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -124,6 +127,33 @@ function parseStoreFile(filePath: string) {
   return JSON.parse(readFileSync(filePath, "utf8")) as StoreShape;
 }
 
+function waitForWriteLockToClear() {
+  for (let attempt = 1; attempt <= READ_RETRY_ATTEMPTS; attempt += 1) {
+    if (!existsSync(writeLockFile)) {
+      return;
+    }
+
+    sleepSync(WRITE_LOCK_RETRY_MS * attempt);
+  }
+}
+
+function parseStoreFileWithRetry(filePath: string) {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= READ_RETRY_ATTEMPTS; attempt += 1) {
+    waitForWriteLockToClear();
+
+    try {
+      return parseStoreFile(filePath);
+    } catch (error) {
+      lastError = error;
+      sleepSync(WRITE_LOCK_RETRY_MS * attempt);
+    }
+  }
+
+  throw lastError;
+}
+
 function listFilesRecursive(baseDir: string) {
   const files: string[] = [];
   const stack = [""];
@@ -167,7 +197,7 @@ function buildRecoveredJob(jobId: string, files: string[], mtimeIso: string): Jo
     assetName: path.basename(toRecoveredInputName(relativePath)),
     relativePath: toRecoveredInputName(relativePath),
     status: "succeeded",
-    outputAssetId: `recovered-output-${jobId}-${index + 1}`,
+    outputAssetId: getRecoveredAssetId(jobId, relativePath),
     finishedAt: mtimeIso,
   }));
 
@@ -198,9 +228,22 @@ function buildRecoveredJob(jobId: string, files: string[], mtimeIso: string): Jo
   };
 }
 
-function buildRecoveredAssets(jobId: string, files: string[]): Asset[] {
+function getRecoveredAssetId(jobId: string, relativePath: string) {
+  const stableSuffix = createHash("sha1").update(relativePath).digest("hex").slice(0, 12);
+  return `recovered-output-${jobId}-${stableSuffix}`;
+}
+
+function buildRecoveredAssets(jobId: string, files: string[], job?: Job): Asset[] {
+  const jobItemsByOutputName = new Map(
+    (job?.jobItems ?? []).map((item) => {
+      const sourceName = toRecoveredInputName(path.basename(item.relativePath ?? item.assetName));
+      const outputName = `${path.basename(sourceName, path.extname(sourceName))}-translated.png`;
+      return [outputName, item] as const;
+    }),
+  );
+
   return files.map((relativePath, index) => ({
-    id: `recovered-output-${jobId}-${index + 1}`,
+    id: getRecoveredAssetId(jobId, relativePath),
     name: path.basename(relativePath),
     kind: path.extname(relativePath).replace(".", "").toUpperCase() || "PNG",
     dimensions: "Recovered output",
@@ -211,7 +254,7 @@ function buildRecoveredAssets(jobId: string, files: string[]): Asset[] {
     source: `job:${jobId}`,
     uploadedAt: statSync(path.join(outputsDir, jobId, relativePath)).mtime.toISOString(),
     relativePath,
-    sourceAssetId: `recovered-input-${jobId}-${index + 1}`,
+    sourceAssetId: jobItemsByOutputName.get(path.basename(relativePath))?.assetId ?? `recovered-input-${jobId}-${index + 1}`,
   }));
 }
 
@@ -222,7 +265,8 @@ function shouldRecoverFromOutputs(store: StoreShape) {
 
   const outputJobDirs = readdirSync(outputsDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && entry.name.startsWith("job_"))
-    .map((entry) => entry.name);
+    .map((entry) => entry.name)
+    .filter((jobId) => listFilesRecursive(path.join(outputsDir, jobId)).length > 0);
 
   if (outputJobDirs.length === 0) {
     return false;
@@ -241,9 +285,7 @@ function shouldRecoverFromOutputs(store: StoreShape) {
 
 function recoverStoreFromOutputs(existingStore: StoreShape) {
   const existingJobIds = new Set(existingStore.jobs.map((job) => job.id));
-  const existingAssetKeys = new Set(
-    existingStore.assets.map((asset) => `${asset.source ?? "upload"}::${asset.relativePath ?? asset.name}`),
-  );
+  const existingAssetKeys = new Set(existingStore.assets.map(getAssetDedupeKey));
   const recoveredJobs: Job[] = [];
   const recoveredAssets: Asset[] = [];
 
@@ -263,12 +305,16 @@ function recoverStoreFromOutputs(existingStore: StoreShape) {
     if (!existingJobIds.has(jobId)) {
       recoveredJobs.push(buildRecoveredJob(jobId, files, mtimeIso));
     }
-    recoveredAssets.push(
-      ...buildRecoveredAssets(jobId, files).filter((asset) => {
-        const assetKey = `${asset.source ?? "upload"}::${asset.relativePath ?? asset.name}`;
-        return !existingAssetKeys.has(assetKey);
-      }),
-    );
+    const existingJob = existingStore.jobs.find((entry) => entry.id === jobId);
+    for (const asset of buildRecoveredAssets(jobId, files, existingJob)) {
+      const assetKey = getAssetDedupeKey(asset);
+      if (existingAssetKeys.has(assetKey)) {
+        continue;
+      }
+
+      existingAssetKeys.add(assetKey);
+      recoveredAssets.push(asset);
+    }
   }
 
   recoveredJobs.sort((a, b) => (b.finishedAt ?? "").localeCompare(a.finishedAt ?? ""));
@@ -332,9 +378,18 @@ function writeJsonAtomic(targetFile: string, snapshot: string) {
 function writeBackupBestEffort(snapshot: string) {
   try {
     writeJsonAtomic(backupStoreFile, snapshot);
+    lastBackupWriteAt = Date.now();
   } catch {
     // The live store is authoritative; backup writes can be blocked briefly on Windows.
   }
+}
+
+function writeBackupIfDue(snapshot: string) {
+  if (Date.now() - lastBackupWriteAt < BACKUP_WRITE_INTERVAL_MS && existsSync(backupStoreFile)) {
+    return;
+  }
+
+  writeBackupBestEffort(snapshot);
 }
 
 function loadStore(): StoreShape {
@@ -347,15 +402,13 @@ function loadStore(): StoreShape {
     }
 
     try {
-      const store = parseStoreFile(candidate);
+      const store = parseStoreFileWithRetry(candidate);
       if (!shouldRecoverFromOutputs(store)) {
         return store;
       }
 
       const normalizedStore = recoverStoreFromOutputs(store);
-      const snapshot = serializeStore(normalizedStore);
       writeStore(normalizedStore);
-      writeBackupBestEffort(snapshot);
       return normalizedStore;
     } catch {
       continue;
@@ -389,7 +442,7 @@ function updateStore<T>(updater: (store: StoreShape) => T) {
     const result = updater(store);
     const snapshot = serializeStore(store);
     writeJsonAtomic(storeFile, snapshot);
-    writeBackupBestEffort(snapshot);
+    writeBackupIfDue(snapshot);
     return result;
   } finally {
     releaseWriteLock();
@@ -446,7 +499,7 @@ export function getResultAssetsByJobIds(jobIds: string[]) {
         return false;
       }
 
-      const dedupeKey = `${source}::${asset.relativePath ?? asset.name}`;
+      const dedupeKey = getAssetDedupeKey(asset);
       if (seenKeys.has(dedupeKey)) {
         return false;
       }
@@ -472,7 +525,7 @@ function getDedupedResultAssets(store: StoreShape, jobIds: string[]) {
       return false;
     }
 
-    const dedupeKey = `${source}::${asset.relativePath ?? asset.name}`;
+    const dedupeKey = getAssetDedupeKey(asset);
     if (seenKeys.has(dedupeKey)) {
       return false;
     }
@@ -480,6 +533,20 @@ function getDedupedResultAssets(store: StoreShape, jobIds: string[]) {
     seenKeys.add(dedupeKey);
     return true;
   });
+}
+
+function getAssetDedupeKey(asset: Pick<Asset, "source" | "previewUrl" | "sourceAssetId" | "relativePath" | "name">) {
+  const source = asset.source ?? "upload";
+  if (source.startsWith("job:")) {
+    if (asset.previewUrl) {
+      return `${source}::preview:${asset.previewUrl}`;
+    }
+    if (asset.sourceAssetId) {
+      return `${source}::source-asset:${asset.sourceAssetId}`;
+    }
+  }
+
+  return `${source}::path:${asset.relativePath ?? asset.name}`;
 }
 
 export function getResultAssetSummariesByJobIds(jobIds: string[], sampleLimit = 1) {
@@ -736,9 +803,9 @@ export function createWorkflow(input: WorkflowInput) {
 
 export function createAsset(input: AssetInput) {
   return updateStore((store) => {
-    const dedupeKey = `${input.source ?? "upload"}::${input.relativePath ?? input.name}`;
+    const dedupeKey = getAssetDedupeKey(input);
     const existingIndex = store.assets.findIndex((asset) => {
-      const assetKey = `${asset.source ?? "upload"}::${asset.relativePath ?? asset.name}`;
+      const assetKey = getAssetDedupeKey(asset);
       return assetKey === dedupeKey;
     });
     const asset: Asset = {

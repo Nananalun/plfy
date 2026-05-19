@@ -27,8 +27,8 @@ type RunResult = {
 
 const MAX_INPUT_IMAGE_EDGE = 1536;
 const JPEG_UPLOAD_QUALITY = 88;
-const ENDPOINT_COOLDOWN_MS = 5 * 60_000;
-const endpointCooldownUntil = new Map<string, number>();
+const IMAGE_EDIT_TIMEOUT_MS = 10 * 60_000;
+const GENERATED_IMAGE_DOWNLOAD_TIMEOUT_MS = 2 * 60_000;
 
 function getMimeType(asset: Asset) {
   switch (asset.kind.toUpperCase()) {
@@ -57,14 +57,6 @@ function describeFetchError(error: unknown) {
   ].filter(Boolean);
 
   return details.join(" - ");
-}
-
-function getEndpointKey(endpoint: { label: string; baseUrl: string; apiKey: string }) {
-  return `${endpoint.label}:${endpoint.baseUrl}:${endpoint.apiKey.slice(0, 8)}`;
-}
-
-function isAccountExhausted(message: string) {
-  return /no available accounts|all available accounts exhausted/i.test(message);
 }
 
 async function prepareUploadImage(inputPath: string, asset: Asset) {
@@ -134,13 +126,6 @@ export async function runOpenAIImageJob({
     const attemptLog: string[] = [];
 
     for (const endpoint of endpoints) {
-      const endpointKey = getEndpointKey(endpoint);
-      const cooldownUntil = endpointCooldownUntil.get(endpointKey) ?? 0;
-      if (cooldownUntil > Date.now()) {
-        attemptLog.push(`${endpoint.label}: skipped - account cooldown`);
-        continue;
-      }
-
       const formData = new FormData();
       formData.append("model", model);
       formData.append("prompt", prompt);
@@ -159,6 +144,7 @@ export async function runOpenAIImageJob({
             Authorization: `Bearer ${endpoint.apiKey}`,
           },
           body: formData,
+          signal: AbortSignal.timeout(IMAGE_EDIT_TIMEOUT_MS),
         });
         const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
 
@@ -198,7 +184,9 @@ export async function runOpenAIImageJob({
         }
 
         if (response.ok && result?.data?.[0]?.url) {
-          const fileResponse = await fetch(result.data[0].url);
+          const fileResponse = await fetch(result.data[0].url, {
+            signal: AbortSignal.timeout(GENERATED_IMAGE_DOWNLOAD_TIMEOUT_MS),
+          });
           if (!fileResponse.ok) {
             attemptLog.push(`${endpoint.label}: fail - Generated image URL could not be downloaded (${fileResponse.status}).`);
             break;
@@ -214,9 +202,6 @@ export async function runOpenAIImageJob({
           result?.error?.message ??
           (rawText ? rawText.slice(0, 240) : `OpenAI image edit failed with status ${response.status}.`);
         attemptLog.push(`${endpoint.label}: fail (${elapsedSeconds}s) - ${fallbackMessage}`);
-        if (isAccountExhausted(fallbackMessage)) {
-          endpointCooldownUntil.set(endpointKey, Date.now() + ENDPOINT_COOLDOWN_MS);
-        }
       } catch (error) {
         const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
         attemptLog.push(`${endpoint.label}: fail (${elapsedSeconds}s) - ${describeFetchError(error)}`);

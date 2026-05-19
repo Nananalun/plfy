@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { runDashScopeImageJob } from "@/lib/dashscope-image-runner";
@@ -17,10 +17,18 @@ import { renderTranslationOverlay } from "@/lib/translation-overlay";
 
 const schedulerWorkerId = randomUUID();
 const locksDir = path.join(process.cwd(), "data", "job-runner-locks");
+const schedulerLockFile = path.join(locksDir, "scheduler.json");
 const SLOT_STALE_MS = 60_000;
+const SCHEDULER_LOCK_STALE_MS = 10_000;
 const RUNNER_WAKE_INTERVAL_MS = 2_000;
 let scheduling = false;
 let lastRunnerWakeAt = 0;
+
+function deferToNextTick() {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
 
 type SlotLock = {
   jobId: string;
@@ -37,6 +45,23 @@ function ensureLocksDir() {
 
 function slotFilePath(slotId: number) {
   return path.join(locksDir, `slot-${slotId}.json`);
+}
+
+function getKnownSlotIds() {
+  ensureLocksDir();
+  const slotIds = new Set<number>();
+  for (let slotId = 1; slotId <= getJobRunnerMaxParallelJobs(); slotId += 1) {
+    slotIds.add(slotId);
+  }
+
+  for (const entry of readdirSync(locksDir, { withFileTypes: true })) {
+    const match = /^slot-(\d+)\.json$/.exec(entry.name);
+    if (entry.isFile() && match) {
+      slotIds.add(Number.parseInt(match[1], 10));
+    }
+  }
+
+  return [...slotIds].filter(Number.isFinite).sort((a, b) => a - b);
 }
 
 function nowIso() {
@@ -71,6 +96,54 @@ function clearSlotLock(slotId: number) {
   }
 }
 
+function acquireSchedulerLock() {
+  ensureLocksDir();
+
+  if (existsSync(schedulerLockFile)) {
+    try {
+      const lock = JSON.parse(readFileSync(schedulerLockFile, "utf8")) as { workerId?: string; heartbeatAt?: string };
+      const age = Date.now() - new Date(lock.heartbeatAt ?? "").getTime();
+      if (!Number.isFinite(age) || age < 0 || age > SCHEDULER_LOCK_STALE_MS) {
+        rmSync(schedulerLockFile, { force: true });
+      }
+    } catch {
+      rmSync(schedulerLockFile, { force: true });
+    }
+  }
+
+  try {
+    writeFileSync(
+      schedulerLockFile,
+      JSON.stringify({
+        workerId: schedulerWorkerId,
+        heartbeatAt: nowIso(),
+      }),
+      {
+        encoding: "utf8",
+        flag: "wx",
+      },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function releaseSchedulerLock() {
+  if (!existsSync(schedulerLockFile)) {
+    return;
+  }
+
+  try {
+    const lock = JSON.parse(readFileSync(schedulerLockFile, "utf8")) as { workerId?: string };
+    if (lock.workerId === schedulerWorkerId) {
+      rmSync(schedulerLockFile, { force: true });
+    }
+  } catch {
+    rmSync(schedulerLockFile, { force: true });
+  }
+}
+
 function isFreshHeartbeat(heartbeatAt?: string) {
   if (!heartbeatAt) {
     return false;
@@ -81,6 +154,11 @@ function isFreshHeartbeat(heartbeatAt?: string) {
 }
 
 function touchJobHeartbeat(jobId: string, slotId: number) {
+  const current = parseSlotLock(slotId);
+  if (current && current.jobId !== jobId) {
+    return false;
+  }
+
   const heartbeatAt = nowIso();
   updateJob(jobId, {
     heartbeatAt,
@@ -93,6 +171,7 @@ function touchJobHeartbeat(jobId: string, slotId: number) {
     slotId,
     heartbeatAt,
   }, false);
+  return true;
 }
 
 function releaseJobSlot(jobId: string, slotId: number) {
@@ -134,7 +213,7 @@ function acquireSlot(jobId: string) {
   ensureLocksDir();
 
   const hasFreshJobLock = () => {
-    for (let slotId = 1; slotId <= getJobRunnerMaxParallelJobs(); slotId += 1) {
+    for (const slotId of getKnownSlotIds()) {
       cleanupStaleSlot(slotId);
       const existingLock = parseSlotLock(slotId);
       if (existingLock?.jobId === jobId && isFreshHeartbeat(existingLock.heartbeatAt)) {
@@ -327,6 +406,10 @@ function refreshJobSummary(jobId: string, extraUpdates?: Partial<Job>) {
     ...summarize(current.jobItems ?? [], Boolean(current.pausedAt), current.autoRetryFailedItems !== false),
     ...extraUpdates,
   });
+}
+
+function getRecoverableRunningItemStatus(job: Job) {
+  return job.autoRetryFailedItems === false ? "failed" : "pending";
 }
 
 function markJobItem(jobId: string, assetId: string, updates: Partial<JobItem>) {
@@ -578,16 +661,27 @@ async function runJobNow(jobId: string, slotId: number) {
       return;
     }
 
-    touchJobHeartbeat(job.id, slotId);
+    if (!touchJobHeartbeat(job.id, slotId)) {
+      recoverJobState(job.id);
+      return;
+    }
     updateJob(job.id, {
       status: "running",
       statusTone: "blue",
       startedAt: job.startedAt ?? nowIso(),
     });
 
-    touchJobHeartbeat(job.id, slotId);
+    if (!touchJobHeartbeat(job.id, slotId)) {
+      recoverJobState(job.id);
+      return;
+    }
 
     for (const asset of assets) {
+      if (!touchJobHeartbeat(job.id, slotId)) {
+        recoverJobState(job.id);
+        return;
+      }
+
       if (shouldPauseJob(job.id)) {
         refreshJobSummary(job.id);
         return;
@@ -605,10 +699,15 @@ async function runJobNow(jobId: string, slotId: number) {
         continue;
       }
 
-      touchJobHeartbeat(job.id, slotId);
+      if (!touchJobHeartbeat(job.id, slotId)) {
+        recoverJobState(job.id);
+        return;
+      }
       markJobItem(job.id, asset.id, {
         status: "running",
         error: undefined,
+        endpointUsed: undefined,
+        attemptLog: undefined,
         startedAt: nowIso(),
       });
       markAttemptStarted(job.id, asset.id);
@@ -621,7 +720,10 @@ async function runJobNow(jobId: string, slotId: number) {
 
         const persisted = await persistOutput(job, asset, output);
         incrementJobCounter(job.id, "successfulCallCount");
-        touchJobHeartbeat(job.id, slotId);
+        if (!touchJobHeartbeat(job.id, slotId)) {
+          recoverJobState(job.id);
+          return;
+        }
         markJobItem(job.id, asset.id, {
           status: "succeeded",
           outputAssetId: persisted.id,
@@ -631,7 +733,10 @@ async function runJobNow(jobId: string, slotId: number) {
         });
       } catch (error) {
         incrementJobCounter(job.id, "failedCallCount");
-        touchJobHeartbeat(job.id, slotId);
+        if (!touchJobHeartbeat(job.id, slotId)) {
+          recoverJobState(job.id);
+          return;
+        }
         updateJobItems(job.id, (items) =>
           items.map((item) =>
             item.assetId === asset.id
@@ -670,7 +775,7 @@ function getRunningJobIdsFromSlots() {
   const jobIds = new Set<string>();
   ensureLocksDir();
 
-  for (let slotId = 1; slotId <= getJobRunnerMaxParallelJobs(); slotId += 1) {
+  for (const slotId of getKnownSlotIds()) {
     cleanupStaleSlot(slotId);
     const lock = parseSlotLock(slotId);
     if (lock && isFreshHeartbeat(lock.heartbeatAt)) {
@@ -690,38 +795,39 @@ export function recoverJobState(jobId: string) {
     return getJobById(jobId);
   }
 
-  const job = getJobById(jobId);
+  const job = reconcileJobOutputState(jobId) ?? getJobById(jobId);
   if (!job) {
     return undefined;
   }
 
-  reconcileJobOutputState(jobId);
-
   const jobItems = job.jobItems ?? [];
   const hasInterruptedWork = jobItems.some((item) => item.status === "running");
   if (!hasInterruptedWork) {
-    return updateJob(jobId, {
+    updateJob(jobId, {
       runnerWorkerId: undefined,
       runnerSlotId: undefined,
       heartbeatAt: undefined,
     });
+    return refreshJobSummary(jobId);
   }
 
+  const recoveredItemStatus = getRecoverableRunningItemStatus(job);
   updateJobItems(jobId, (items) =>
     items.map((item) =>
       item.status === "running"
         ? {
             ...item,
-            status: job.autoRetryFailedItems === false ? "failed" : "pending",
+            status: recoveredItemStatus,
             error: item.error ?? "Interrupted before completion.",
-            finishedAt: job.autoRetryFailedItems === false ? (item.finishedAt ?? nowIso()) : undefined,
+            finishedAt: recoveredItemStatus === "failed" ? (item.finishedAt ?? nowIso()) : undefined,
           }
         : item,
     ),
   );
 
+  const hasRetryableWork = recoveredItemStatus === "pending";
   return refreshJobSummary(jobId, {
-    finishedAt: nowIso(),
+    finishedAt: hasRetryableWork ? undefined : nowIso(),
     runnerWorkerId: undefined,
     runnerSlotId: undefined,
     heartbeatAt: undefined,
@@ -733,12 +839,18 @@ export function recoverInterruptedJobs() {
   const recoveredJobIds: string[] = [];
 
   for (const job of jobs) {
-    const hasInterruptedWork = (job.jobItems ?? []).some((item) => item.status === "running");
-    if (!hasInterruptedWork) {
+    if (isJobScheduled(job.id)) {
       continue;
     }
 
-    if (isJobScheduled(job.id)) {
+    const hasInterruptedWork = (job.jobItems ?? []).some((item) => item.status === "running");
+    const hasStaleRunningJobState =
+      job.status === "running" ||
+      Boolean(job.runnerSlotId) ||
+      Boolean(job.runnerWorkerId) ||
+      Boolean(job.heartbeatAt);
+
+    if (!hasInterruptedWork && !hasStaleRunningJobState) {
       continue;
     }
 
@@ -757,15 +869,18 @@ export async function scheduleJobs() {
   }
 
   scheduling = true;
+  await deferToNextTick();
+  const hasSchedulerLock = acquireSchedulerLock();
 
   try {
+    if (!hasSchedulerLock) {
+      return;
+    }
+
     recoverInterruptedJobs();
     for (const job of listJobs()) {
-      if (job.status === "queued" || job.status === "running" || job.status === "partial" || job.status === "failed") {
-        reconcileJobOutputState(job.id);
-        if (!isJobScheduled(job.id)) {
-          queueFailedItemsForNextAutoRetryRound(job.id);
-        }
+      if ((job.status === "partial" || job.status === "failed") && !isJobScheduled(job.id)) {
+        queueFailedItemsForNextAutoRetryRound(job.id);
       }
     }
 
@@ -812,6 +927,9 @@ export async function scheduleJobs() {
       void runJobNow(candidate.id, slotId);
     }
   } finally {
+    if (hasSchedulerLock) {
+      releaseSchedulerLock();
+    }
     scheduling = false;
   }
 }
@@ -823,16 +941,9 @@ export async function ensureJobRunnerAwake() {
   }
 
   lastRunnerWakeAt = now;
-  recoverInterruptedJobs();
-  for (const job of listJobs()) {
-    if (job.status === "queued" || job.status === "running" || job.status === "partial" || job.status === "failed") {
-      reconcileJobOutputState(job.id);
-      if (!isJobScheduled(job.id)) {
-        queueFailedItemsForNextAutoRetryRound(job.id);
-      }
-    }
-  }
-  await scheduleJobs();
+  setTimeout(() => {
+    void scheduleJobs();
+  }, 0);
 }
 
 export function executeJob(jobId: string) {

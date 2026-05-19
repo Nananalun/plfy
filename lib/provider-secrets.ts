@@ -27,7 +27,7 @@ const defaultSecrets: ProviderSecrets = {
   ollamaBaseUrl: "",
   ollamaVisionModel: "",
   qwenImageWorkerUrl: "",
-  jobRunnerMaxParallelJobs: 10,
+  jobRunnerMaxParallelJobs: 3,
 };
 
 function ensureSecretsFile() {
@@ -122,7 +122,7 @@ export function getQwenImageWorkerUrl() {
 
 export function getJobRunnerMaxParallelJobs() {
   const local = readProviderSecrets();
-  const raw = process.env.JOB_RUNNER_MAX_PARALLEL_JOBS ?? `${local.jobRunnerMaxParallelJobs ?? 10}`;
+  const raw = process.env.JOB_RUNNER_MAX_PARALLEL_JOBS ?? `${local.jobRunnerMaxParallelJobs ?? 3}`;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? Math.max(1, parsed) : 10;
+  return Number.isFinite(parsed) ? Math.max(1, Math.min(3, parsed)) : 3;
 }
