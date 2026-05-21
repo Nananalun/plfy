@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { executeJob } from "@/lib/job-runner";
+import { ensureJobRunnerAwake, executeJob } from "@/lib/job-runner";
 import { toJobListItem } from "@/lib/job-list-view";
 import { createJob, getAssetsByBatchId, getAssetsByIds, getResultAssetSummariesByJobIds, listJobs } from "@/lib/mock-store";
 import type { JobItem } from "@/lib/platform-types";
 import { getQueueLanes } from "@/lib/platform-data";
 
 export async function GET(request: Request) {
+  await ensureJobRunnerAwake();
+
   const url = new URL(request.url);
   const pageParam = Number.parseInt(url.searchParams.get("page") ?? "1", 10);
   const pageSizeParam = Number.parseInt(url.searchParams.get("pageSize") ?? "15", 10);

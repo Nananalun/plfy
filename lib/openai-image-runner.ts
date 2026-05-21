@@ -26,9 +26,17 @@ type RunResult = {
 };
 
 const MAX_INPUT_IMAGE_EDGE = 1536;
-const JPEG_UPLOAD_QUALITY = 88;
-const IMAGE_EDIT_TIMEOUT_MS = 10 * 60_000;
-const GENERATED_IMAGE_DOWNLOAD_TIMEOUT_MS = 2 * 60_000;
+const JPEG_UPLOAD_QUALITY = 84;
+const HIGHWAY_INPUT_IMAGE_EDGE = 1024;
+const HIGHWAY_JPEG_UPLOAD_QUALITY = 75;
+const HIGHWAY_QUALITY = "low";
+const HIGHWAY_SIZE = "1024x1024";
+
+type OpenAIEndpoint = {
+  label: string;
+  apiKey: string;
+  baseUrl: string;
+};
 
 function getMimeType(asset: Asset) {
   switch (asset.kind.toUpperCase()) {
@@ -59,20 +67,54 @@ function describeFetchError(error: unknown) {
   return details.join(" - ");
 }
 
+function isHighwayImageEditEndpoint(endpoint: OpenAIEndpoint) {
+  return /(^|\.)highwayapi\.ai$/i.test(new URL(endpoint.baseUrl).hostname) || endpoint.baseUrl.includes("/gpt-image-2-edit");
+}
+
+function getHighwayImageEditUrl(baseUrl: string) {
+  if (baseUrl.includes("/gpt-image-2-edit")) {
+    return baseUrl;
+  }
+
+  const url = new URL(baseUrl);
+  return `${url.origin}/v3/gpt-image-2-edit`;
+}
+
+function normalizeImageString(value: string) {
+  if (value.startsWith("data:")) {
+    return Buffer.from(value.replace(/^data:[^;]+;base64,/, ""), "base64");
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return undefined;
+  }
+
+  return Buffer.from(value, "base64");
+}
+
+function extractHighwayImage(result: unknown) {
+  const response = result as {
+    images?: Array<string | { url?: string; b64_json?: string; base64?: string; image?: string }>;
+  } | null;
+  const first = response?.images?.[0];
+
+  if (typeof first === "string") {
+    return { url: /^https?:\/\//i.test(first) ? first : undefined, bytes: normalizeImageString(first) };
+  }
+
+  if (first?.url) {
+    return { url: first.url, bytes: undefined };
+  }
+
+  const encoded = first?.b64_json ?? first?.base64 ?? first?.image;
+  return encoded ? { url: undefined, bytes: normalizeImageString(encoded) } : { url: undefined, bytes: undefined };
+}
+
 async function prepareUploadImage(inputPath: string, asset: Asset) {
   const originalBytes = await readFile(inputPath);
   const metadata = await sharp(originalBytes).metadata();
   const width = metadata.width ?? 0;
   const height = metadata.height ?? 0;
-  const shouldResize = Math.max(width, height) > MAX_INPUT_IMAGE_EDGE;
-
-  if (!shouldResize && originalBytes.length < 1_000_000) {
-    return {
-      bytes: originalBytes,
-      mimeType: getMimeType(asset),
-      filename: path.basename(asset.name),
-    };
-  }
 
   const pipeline = sharp(originalBytes).rotate().resize({
     width: MAX_INPUT_IMAGE_EDGE,
@@ -96,6 +138,111 @@ async function prepareUploadImage(inputPath: string, asset: Asset) {
     mimeType: "image/jpeg",
     filename: path.basename(asset.name).replace(/\.[^.]+$/, ".jpg"),
   };
+}
+
+async function prepareHighwayUploadImage(upload: Awaited<ReturnType<typeof prepareUploadImage>>) {
+  const metadata = await sharp(upload.bytes).metadata();
+  if (metadata.hasAlpha) {
+    const bytes = await sharp(upload.bytes)
+      .rotate()
+      .resize({
+        width: HIGHWAY_INPUT_IMAGE_EDGE,
+        height: HIGHWAY_INPUT_IMAGE_EDGE,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+
+    return {
+      bytes,
+      mimeType: "image/png",
+    };
+  }
+
+  const bytes = await sharp(upload.bytes)
+    .rotate()
+    .resize({
+      width: HIGHWAY_INPUT_IMAGE_EDGE,
+      height: HIGHWAY_INPUT_IMAGE_EDGE,
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .jpeg({ quality: HIGHWAY_JPEG_UPLOAD_QUALITY, mozjpeg: true })
+    .toBuffer();
+
+  return {
+    bytes,
+    mimeType: "image/jpeg",
+  };
+}
+
+async function runHighwayImageEdit({
+  endpoint,
+  upload,
+  prompt,
+}: {
+  endpoint: OpenAIEndpoint;
+  upload: Awaited<ReturnType<typeof prepareUploadImage>>;
+  prompt: string;
+}) {
+  const highwayUpload = await prepareHighwayUploadImage(upload);
+  const requestBody: Record<string, unknown> = {
+    n: 1,
+    image: `data:${highwayUpload.mimeType};base64,${highwayUpload.bytes.toString("base64")}`,
+    prompt,
+    quality: HIGHWAY_QUALITY,
+    size: HIGHWAY_SIZE,
+    background: "auto",
+    output_format: "png",
+  };
+
+  const response = await fetch(getHighwayImageEditUrl(endpoint.baseUrl), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${endpoint.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  const contentType = (response.headers.get("content-type") || "").toLowerCase();
+
+  if (response.ok && (contentType.startsWith("image/") || contentType.includes("application/octet-stream"))) {
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  const rawText = await response.text();
+  let result: unknown = null;
+
+  try {
+    result = rawText ? JSON.parse(rawText) : null;
+  } catch {
+    result = null;
+  }
+
+  if (!response.ok) {
+    const message =
+      typeof result === "object" && result && "error" in result
+        ? JSON.stringify((result as { error?: unknown }).error)
+        : rawText.slice(0, 240);
+    throw new Error(message || `Highway image edit failed with status ${response.status}.`);
+  }
+
+  const image = extractHighwayImage(result);
+  if (image.bytes) {
+    return image.bytes;
+  }
+
+  if (image.url) {
+    const fileResponse = await fetch(image.url);
+    if (!fileResponse.ok) {
+      throw new Error(`Generated image URL could not be downloaded (${fileResponse.status}).`);
+    }
+    return Buffer.from(await fileResponse.arrayBuffer());
+  }
+
+  throw new Error(rawText ? rawText.slice(0, 240) : "Highway image edit response did not include an image.");
 }
 
 export async function runOpenAIImageJob({
@@ -126,6 +273,22 @@ export async function runOpenAIImageJob({
     const attemptLog: string[] = [];
 
     for (const endpoint of endpoints) {
+      if (isHighwayImageEditEndpoint(endpoint)) {
+        const startedAt = Date.now();
+
+        try {
+          outputBytes = await runHighwayImageEdit({ endpoint, upload, prompt });
+          const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+          endpointUsed = endpoint.label;
+          attemptLog.push(`${endpoint.label}: success (${elapsedSeconds}s)`);
+          break;
+        } catch (error) {
+          const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+          attemptLog.push(`${endpoint.label}: fail (${elapsedSeconds}s) - ${describeFetchError(error)}`);
+          continue;
+        }
+      }
+
       const formData = new FormData();
       formData.append("model", model);
       formData.append("prompt", prompt);
@@ -144,7 +307,6 @@ export async function runOpenAIImageJob({
             Authorization: `Bearer ${endpoint.apiKey}`,
           },
           body: formData,
-          signal: AbortSignal.timeout(IMAGE_EDIT_TIMEOUT_MS),
         });
         const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
 
@@ -184,12 +346,10 @@ export async function runOpenAIImageJob({
         }
 
         if (response.ok && result?.data?.[0]?.url) {
-          const fileResponse = await fetch(result.data[0].url, {
-            signal: AbortSignal.timeout(GENERATED_IMAGE_DOWNLOAD_TIMEOUT_MS),
-          });
+          const fileResponse = await fetch(result.data[0].url);
           if (!fileResponse.ok) {
             attemptLog.push(`${endpoint.label}: fail - Generated image URL could not be downloaded (${fileResponse.status}).`);
-            break;
+            continue;
           }
 
           outputBytes = Buffer.from(await fileResponse.arrayBuffer());
@@ -202,13 +362,11 @@ export async function runOpenAIImageJob({
           result?.error?.message ??
           (rawText ? rawText.slice(0, 240) : `OpenAI image edit failed with status ${response.status}.`);
         attemptLog.push(`${endpoint.label}: fail (${elapsedSeconds}s) - ${fallbackMessage}`);
+        continue;
       } catch (error) {
         const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
         attemptLog.push(`${endpoint.label}: fail (${elapsedSeconds}s) - ${describeFetchError(error)}`);
-      }
-
-      if (outputBytes) {
-        break;
+        continue;
       }
     }
 

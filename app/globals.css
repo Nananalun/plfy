@@ -663,6 +663,27 @@ select {
   resize: vertical;
 }
 
+.job-prompt-editor {
+  display: grid;
+  gap: 10px;
+}
+
+.job-prompt-editor label {
+  display: grid;
+  gap: 8px;
+}
+
+.job-prompt-editor textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 12px 14px;
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  resize: vertical;
+}
+
 .field-span-2 {
   grid-column: span 2;
 }

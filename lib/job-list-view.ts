@@ -5,6 +5,7 @@ export type JobListItem = Omit<Job, "jobItems"> & {
   failedItemCount: number;
   retriedItemCount: number;
   fallbackHitCount: number;
+  fallbackAttemptCount: number;
 };
 
 const FAILED_ITEM_PREVIEW_LIMIT = 5;
@@ -29,6 +30,9 @@ export function toJobListItem(job: Job): JobListItem {
   const attentionItems = jobItems.filter(
     (item) => item.status === "failed" || ((item.failedAttemptCount ?? 0) > 0 && item.status !== "succeeded"),
   );
+  const fallbackAttemptCount = jobItems.filter((item) =>
+    (item.attemptLog ?? []).some((entry) => entry.toLowerCase().startsWith("fallback:")),
+  ).length;
 
   return {
     ...job,
@@ -42,5 +46,6 @@ export function toJobListItem(job: Job): JobListItem {
     failedItemCount: failedCount,
     retriedItemCount: unresolvedFailedItemCount,
     fallbackHitCount: jobItems.filter((item) => item.endpointUsed === "fallback").length,
+    fallbackAttemptCount,
   };
 }

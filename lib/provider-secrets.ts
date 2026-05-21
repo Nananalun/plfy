@@ -27,7 +27,7 @@ const defaultSecrets: ProviderSecrets = {
   ollamaBaseUrl: "",
   ollamaVisionModel: "",
   qwenImageWorkerUrl: "",
-  jobRunnerMaxParallelJobs: 3,
+  jobRunnerMaxParallelJobs: 10,
 };
 
 function ensureSecretsFile() {
@@ -95,7 +95,7 @@ export function getOpenAIEndpoints() {
         }
       : null,
   ].filter(Boolean) as Array<{
-    label: "primary" | "fallback";
+    label: string;
     apiKey: string;
     baseUrl: string;
   }>;
@@ -122,7 +122,7 @@ export function getQwenImageWorkerUrl() {
 
 export function getJobRunnerMaxParallelJobs() {
   const local = readProviderSecrets();
-  const raw = process.env.JOB_RUNNER_MAX_PARALLEL_JOBS ?? `${local.jobRunnerMaxParallelJobs ?? 3}`;
+  const raw = process.env.JOB_RUNNER_MAX_PARALLEL_JOBS ?? `${local.jobRunnerMaxParallelJobs ?? 10}`;
   const parsed = Number.parseInt(raw, 10);
-  return Number.isFinite(parsed) ? Math.max(1, Math.min(3, parsed)) : 3;
+  return Number.isFinite(parsed) ? Math.max(1, Math.min(15, parsed)) : 10;
 }

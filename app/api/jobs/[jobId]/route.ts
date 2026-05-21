@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { deleteAssetsBySource, deleteJob, getAssetsBySource, getJobById } from "@/lib/mock-store";
+import { deleteAssetsBySource, deleteJob, getAssetsBySource, getJobById, updateJob } from "@/lib/mock-store";
 
 function resolvePublicAssetPath(previewUrl: string) {
   const publicDir = path.join(process.cwd(), "public");
@@ -37,4 +37,26 @@ export async function DELETE(
   deleteJob(jobId);
 
   return NextResponse.json({ ok: true });
+}
+
+export async function PATCH(
+  request: Request,
+  context: { params: Promise<{ jobId: string }> },
+) {
+  const { jobId } = await context.params;
+  const job = getJobById(jobId);
+
+  if (!job) {
+    return NextResponse.json({ error: "Job not found." }, { status: 404 });
+  }
+
+  const body = (await request.json()) as { prompt?: string };
+  const prompt = String(body.prompt ?? "").trim();
+
+  if (!prompt) {
+    return NextResponse.json({ error: "Prompt is required." }, { status: 400 });
+  }
+
+  const updated = updateJob(jobId, { prompt });
+  return NextResponse.json({ job: updated });
 }

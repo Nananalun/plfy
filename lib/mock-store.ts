@@ -75,6 +75,7 @@ const ATOMIC_RENAME_RETRY_MS = 50;
 const ATOMIC_RENAME_MAX_ATTEMPTS = 8;
 const BACKUP_WRITE_INTERVAL_MS = 60_000;
 let lastBackupWriteAt = 0;
+let outputRecoveryChecked = false;
 
 function sleepSync(ms: number) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -403,10 +404,12 @@ function loadStore(): StoreShape {
 
     try {
       const store = parseStoreFileWithRetry(candidate);
-      if (!shouldRecoverFromOutputs(store)) {
+      if (outputRecoveryChecked || !shouldRecoverFromOutputs(store)) {
+        outputRecoveryChecked = true;
         return store;
       }
 
+      outputRecoveryChecked = true;
       const normalizedStore = recoverStoreFromOutputs(store);
       writeStore(normalizedStore);
       return normalizedStore;
@@ -419,6 +422,7 @@ function loadStore(): StoreShape {
   const snapshot = serializeStore(store);
   writeJsonAtomic(storeFile, snapshot);
   writeBackupBestEffort(snapshot);
+  outputRecoveryChecked = true;
   return store;
 }
 

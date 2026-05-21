@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { SectionCard } from "@/components/section-card";
+import { JobPromptEditor } from "@/components/job-prompt-editor";
 import { StatusPill } from "@/components/status-pill";
 import { TaskActions } from "@/components/task-actions";
 import { TaskCreator } from "@/components/task-creator";
@@ -217,7 +218,7 @@ export function TasksDashboard({
                   <p className="result-meta">
                     <span>{job.providerModelFamily}:{job.model ?? "-"}</span>
                     <span>Total {job.itemCount}</span>
-                    <span>Success {displaySuccessCount}</span>
+                    <span>Generated {displaySuccessCount}</span>
                     <span>Unfinished {unfinishedCount}</span>
                     <span>Failed {failedItemCount}</span>
                     <span>Rendering {renderingCount}</span>
@@ -226,7 +227,7 @@ export function TasksDashboard({
                     <span>Call ok {successfulCalls}</span>
                     <span>Call failed {failedCalls}</span>
                     {job.retriedItemCount > 0 ? <span>Retrying {job.retriedItemCount}</span> : null}
-                    <span>Fallback {job.fallbackHitCount}</span>
+                    <span>Fallback {job.fallbackHitCount}/{job.fallbackAttemptCount}</span>
                   </p>
                 </div>
                 <div>
@@ -249,7 +250,7 @@ export function TasksDashboard({
                     ) : null}
                   </div>
                   <small>
-                    {successProgress}% ({displaySuccessCount}/{job.itemCount} ok)
+                    {successProgress}% ({displaySuccessCount}/{job.itemCount} generated)
                   </small>
                 </div>
                 <div>
@@ -269,12 +270,13 @@ export function TasksDashboard({
                 <details className="job-detail-panel">
                   <summary>Details and outputs</summary>
                   <div className="stack-sm">
-                    {job.prompt ? (
-                      <div className="result-prompt-body compact-prompt">
-                        <strong>Prompt</strong>
-                        <p className="result-prompt">{job.prompt}</p>
-                      </div>
-                    ) : null}
+                    <JobPromptEditor
+                      jobId={job.id}
+                      prompt={job.prompt ?? ""}
+                      onSaved={async () => {
+                        await refreshTasks();
+                      }}
+                    />
 
                     {attentionItems.length ? (
                       <div className="stack-sm">

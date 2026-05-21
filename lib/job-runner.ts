@@ -21,8 +21,14 @@ const schedulerLockFile = path.join(locksDir, "scheduler.json");
 const SLOT_STALE_MS = 60_000;
 const SCHEDULER_LOCK_STALE_MS = 10_000;
 const RUNNER_WAKE_INTERVAL_MS = 2_000;
+const RUNNER_IDLE_POLL_INTERVAL_MS = 5_000;
+const JOB_HEARTBEAT_STORE_INTERVAL_MS = 45_000;
+const MAX_AUTO_RETRY_FAILED_ATTEMPTS = 3;
 let scheduling = false;
+let scheduleRequested = false;
 let lastRunnerWakeAt = 0;
+let runnerIdlePollTimer: ReturnType<typeof setInterval> | undefined;
+const lastJobHeartbeatStoreWriteAt = new Map<string, number>();
 
 function deferToNextTick() {
   return new Promise<void>((resolve) => {
@@ -160,17 +166,23 @@ function touchJobHeartbeat(jobId: string, slotId: number) {
   }
 
   const heartbeatAt = nowIso();
-  updateJob(jobId, {
-    heartbeatAt,
-    runnerWorkerId: schedulerWorkerId,
-    runnerSlotId: slotId,
-  });
   writeSlotLock({
     jobId,
     workerId: schedulerWorkerId,
     slotId,
     heartbeatAt,
   }, false);
+
+  const now = Date.now();
+  const lastStoreWriteAt = lastJobHeartbeatStoreWriteAt.get(jobId) ?? 0;
+  if (now - lastStoreWriteAt >= JOB_HEARTBEAT_STORE_INTERVAL_MS) {
+    lastJobHeartbeatStoreWriteAt.set(jobId, now);
+    updateJob(jobId, {
+      heartbeatAt,
+      runnerWorkerId: schedulerWorkerId,
+      runnerSlotId: slotId,
+    });
+  }
   return true;
 }
 
@@ -180,11 +192,25 @@ function releaseJobSlot(jobId: string, slotId: number) {
     clearSlotLock(slotId);
   }
 
+  const remainingSlot = getKnownSlotIds()
+    .map((knownSlotId) => parseSlotLock(knownSlotId))
+    .find((lock): lock is SlotLock => Boolean(lock?.jobId === jobId && isFreshHeartbeat(lock.heartbeatAt)));
+
+  if (remainingSlot) {
+    updateJob(jobId, {
+      runnerWorkerId: remainingSlot.workerId,
+      runnerSlotId: remainingSlot.slotId,
+      heartbeatAt: remainingSlot.heartbeatAt,
+    });
+    return;
+  }
+
   updateJob(jobId, {
     runnerWorkerId: undefined,
     runnerSlotId: undefined,
     heartbeatAt: undefined,
   });
+  lastJobHeartbeatStoreWriteAt.delete(jobId);
 }
 
 function slotLockBelongsToRunningJob(lock: SlotLock) {
@@ -193,7 +219,9 @@ function slotLockBelongsToRunningJob(lock: SlotLock) {
     return false;
   }
 
-  return job.runnerSlotId === lock.slotId && isFreshHeartbeat(job.heartbeatAt);
+  const jobItems = job.jobItems ?? [];
+  const hasOpenItems = jobItems.some((item) => item.status === "pending" || item.status === "running");
+  return hasOpenItems && (job.status === "queued" || job.status === "running" || job.status === "partial" || job.status === "failed");
 }
 
 function cleanupStaleSlot(slotId: number) {
@@ -478,7 +506,8 @@ function queueFailedItemsForNextAutoRetryRound(jobId: string) {
     items.map((item) => {
       if (
         item.status !== "failed" ||
-        item.outputAssetId
+        item.outputAssetId ||
+        (item.failedAttemptCount ?? 0) >= MAX_AUTO_RETRY_FAILED_ATTEMPTS
       ) {
         return item;
       }
@@ -786,6 +815,35 @@ function getRunningJobIdsFromSlots() {
   return jobIds;
 }
 
+function hasSchedulablePendingWork() {
+  const assignedJobIds = getRunningJobIdsFromSlots();
+  return listJobs().some((job) => {
+    if (job.pausedAt || job.status === "paused" || assignedJobIds.has(job.id)) {
+      return false;
+    }
+
+    const hasPendingItems = (job.jobItems ?? []).some((item) => item.status === "pending");
+    if (!hasPendingItems) {
+      return false;
+    }
+
+    return job.status === "queued" || job.status === "running" || job.status === "partial" || job.status === "failed";
+  });
+}
+
+function startJobRunnerIdlePoll() {
+  if (runnerIdlePollTimer) {
+    return;
+  }
+
+  runnerIdlePollTimer = setInterval(() => {
+    if (hasSchedulablePendingWork()) {
+      void scheduleJobs();
+    }
+  }, RUNNER_IDLE_POLL_INTERVAL_MS);
+  runnerIdlePollTimer.unref?.();
+}
+
 export function isJobScheduled(jobId: string) {
   return getRunningJobIdsFromSlots().has(jobId);
 }
@@ -864,7 +922,10 @@ export function recoverInterruptedJobs() {
 }
 
 export async function scheduleJobs() {
+  startJobRunnerIdlePoll();
+
   if (scheduling) {
+    scheduleRequested = true;
     return;
   }
 
@@ -931,12 +992,25 @@ export async function scheduleJobs() {
       releaseSchedulerLock();
     }
     scheduling = false;
+    if (scheduleRequested) {
+      scheduleRequested = false;
+      setTimeout(() => {
+        void scheduleJobs();
+      }, 0);
+    }
   }
 }
 
 export async function ensureJobRunnerAwake() {
+  startJobRunnerIdlePoll();
+
   const now = Date.now();
-  if (scheduling || now - lastRunnerWakeAt < RUNNER_WAKE_INTERVAL_MS) {
+  if (scheduling) {
+    scheduleRequested = true;
+    return;
+  }
+
+  if (now - lastRunnerWakeAt < RUNNER_WAKE_INTERVAL_MS) {
     return;
   }
 
@@ -960,3 +1034,5 @@ export function executeJob(jobId: string) {
 
   void scheduleJobs();
 }
+
+startJobRunnerIdlePoll();

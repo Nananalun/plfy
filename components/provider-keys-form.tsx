@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 
 type ProviderFormState = {
   openaiApiKey: string;
@@ -37,7 +37,7 @@ const initialForm: ProviderFormState = {
 };
 
 export function ProviderKeysForm() {
-  const [isPending, startTransition] = useTransition();
+  const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
   const [testing, setTesting] = useState(false);
   const [testStatus, setTestStatus] = useState("");
@@ -45,14 +45,28 @@ export function ProviderKeysForm() {
 
   useEffect(() => {
     void (async () => {
-      const response = await fetch("/api/settings/keys");
-      const result = (await response.json()) as ProviderFormState;
-      setForm(result);
+      try {
+        const response = await fetch("/api/settings/keys");
+        if (!response.ok) {
+          setStatus(`Load settings failed (${response.status})`);
+          return;
+        }
+
+        const result = (await response.json()) as ProviderFormState;
+        setForm(result);
+      } catch (error) {
+        setStatus(error instanceof Error ? `Load settings failed: ${error.message}` : "Load settings failed.");
+      }
     })();
   }, []);
 
   async function handleSubmit(formData: FormData) {
-    setStatus("");
+    if (saving) {
+      return;
+    }
+
+    setStatus("Saving...");
+    setSaving(true);
     const payload = {
       openaiApiKey: String(formData.get("openaiApiKey") ?? ""),
       openaiBaseUrl: String(formData.get("openaiBaseUrl") ?? "https://api.openai.com/v1"),
@@ -66,14 +80,42 @@ export function ProviderKeysForm() {
       jobRunnerMaxParallelJobs: Number(formData.get("jobRunnerMaxParallelJobs") ?? 10),
     };
 
-    const response = await fetch("/api/settings/keys", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    try {
+      const response = await fetch("/api/settings/keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-    setStatus(response.ok ? "Saved" : "Save failed");
-    startTransition(() => {});
+      if (!response.ok) {
+        const result = (await response.json().catch(() => null)) as { error?: string } | null;
+        setStatus(result?.error ?? `Save failed (${response.status})`);
+        return;
+      }
+
+      setForm((current) => ({
+        ...current,
+        ...payload,
+        openaiApiKey: "",
+        openaiApiKeyConfigured: Boolean(payload.openaiApiKey.trim()) || current.openaiApiKeyConfigured,
+        openaiFallbackApiKey: "",
+        openaiFallbackApiKeyConfigured: Boolean(payload.openaiFallbackApiKey.trim()) || current.openaiFallbackApiKeyConfigured,
+        geminiApiKey: "",
+        geminiApiKeyConfigured: Boolean(payload.geminiApiKey.trim()) || current.geminiApiKeyConfigured,
+        dashscopeApiKey: "",
+        dashscopeApiKeyConfigured: Boolean(payload.dashscopeApiKey.trim()) || current.dashscopeApiKeyConfigured,
+      }));
+      setStatus("Saved");
+    } catch (error) {
+      setStatus(error instanceof Error ? `Save failed: ${error.message}` : "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleFormSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void handleSubmit(new FormData(event.currentTarget));
   }
 
   async function handleConnectivityTest() {
@@ -121,9 +163,7 @@ export function ProviderKeysForm() {
   return (
     <form
       className="action-form"
-      action={(formData) => {
-        void handleSubmit(formData);
-      }}
+      onSubmit={handleFormSubmit}
     >
       <div className="form-grid">
         <label>
@@ -230,8 +270,8 @@ export function ProviderKeysForm() {
         </label>
       </div>
       <div className="form-footer">
-        <button type="submit" className="primary-button" disabled={isPending}>
-          {isPending ? "Saving..." : "Save settings"}
+        <button type="submit" className="primary-button" disabled={saving}>
+          {saving ? "Saving..." : "Save settings"}
         </button>
         <button
           type="button"
