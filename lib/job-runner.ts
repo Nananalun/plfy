@@ -225,8 +225,12 @@ function slotLockBelongsToRunningJob(lock: SlotLock) {
 }
 
 function cleanupStaleSlot(slotId: number) {
+  const filePath = slotFilePath(slotId);
   const lock = parseSlotLock(slotId);
   if (!lock) {
+    if (existsSync(filePath)) {
+      clearSlotLock(slotId);
+    }
     return;
   }
 
@@ -308,6 +312,25 @@ function createBaseRedrawPrompt(userPrompt: string) {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function createStableOpenAIImagePrompt(userPrompt: string) {
+  const prompt = userPrompt.trim();
+  if (!prompt) {
+    return "Make a clean English version of this image.";
+  }
+
+  const asksForTextTranslation =
+    /chinese/i.test(prompt) ||
+    /translate/i.test(prompt) ||
+    /natural english/i.test(prompt) ||
+    /english version/i.test(prompt);
+
+  if (asksForTextTranslation) {
+    return "Make a clean English version of this image.";
+  }
+
+  return prompt;
 }
 
 async function buildRedrawPrompts(assets: Asset[], userPrompt: string) {
@@ -546,7 +569,7 @@ async function persistOutput(job: Job, asset: Asset, output: {
     await writeFile(storedFilePath, output.bytes);
   }
 
-  return createAsset({
+  const persisted = createAsset({
     name: output.name,
     kind: pathExtToKind(output.name),
     dimensions: output.dimensions,
@@ -556,6 +579,12 @@ async function persistOutput(job: Job, asset: Asset, output: {
     relativePath: buildOutputRelativePath(asset, output.name),
     sourceAssetId: asset.id,
   });
+
+  console.info(
+    `[image-generation:succeeded] jobId=${job.id} sourceAssetId=${asset.id} sourceAsset="${asset.name}" outputAssetId=${persisted.id} output="${output.name}" previewUrl="${persisted.previewUrl}"`,
+  );
+
+  return persisted;
 }
 
 async function runTranslationOverlay(job: Job, asset: Asset) {
@@ -632,7 +661,7 @@ async function processSingleAsset(job: Job, asset: Asset) {
     if (job.provider === "openai") {
       const result = await runOpenAIImageJob({
         assets: [asset],
-        prompt,
+        prompt: createStableOpenAIImagePrompt(prompt),
         model: job.model ?? "gpt-image-2",
         quality: job.quality ?? "high",
         size: job.size ?? "auto",

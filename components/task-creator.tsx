@@ -7,8 +7,7 @@ type ProviderFamily = "dashscope" | "openai" | "qwen-local";
 type BrowserFile = File & { webkitRelativePath?: string };
 
 const defaults = {
-  prompt:
-    "Keep the original layout, subject, composition, colors, and visual style. Only replace visible Chinese text with natural English. Do not add unrelated elements or change the product, people, or background.",
+  prompt: "Make a clean English version of this image.",
   providerModelFamily: "qwen-local" as ProviderFamily,
   model: "Qwen/Qwen-Image-Edit-2511",
   size: "auto",

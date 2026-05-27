@@ -25,12 +25,13 @@ type RunResult = {
   }>;
 };
 
-const MAX_INPUT_IMAGE_EDGE = 1536;
+const MAX_INPUT_IMAGE_EDGE = 1024;
 const JPEG_UPLOAD_QUALITY = 84;
 const HIGHWAY_INPUT_IMAGE_EDGE = 1024;
 const HIGHWAY_JPEG_UPLOAD_QUALITY = 75;
 const HIGHWAY_QUALITY = "low";
 const HIGHWAY_SIZE = "1024x1024";
+const UPSTREAM_IMAGE_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
 
 type OpenAIEndpoint = {
   label: string;
@@ -108,6 +109,86 @@ function extractHighwayImage(result: unknown) {
 
   const encoded = first?.b64_json ?? first?.base64 ?? first?.image;
   return encoded ? { url: undefined, bytes: normalizeImageString(encoded) } : { url: undefined, bytes: undefined };
+}
+
+function isImageContentType(contentType: string) {
+  return contentType.startsWith("image/") || contentType.includes("application/octet-stream");
+}
+
+function isLikelyImageBytes(bytes: Buffer) {
+  if (bytes.length < 12) {
+    return false;
+  }
+
+  const png = bytes[0] === 0x89 && bytes.subarray(1, 4).toString("ascii") === "PNG";
+  const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  const gif = bytes.subarray(0, 3).toString("ascii") === "GIF";
+  const webp = bytes.subarray(0, 4).toString("ascii") === "RIFF" && bytes.subarray(8, 12).toString("ascii") === "WEBP";
+  return png || jpeg || gif || webp;
+}
+
+function getImageResponseBytes(contentType: string, bytes: Buffer) {
+  if (isImageContentType(contentType) && !contentType.includes("application/octet-stream")) {
+    return bytes.length ? bytes : undefined;
+  }
+
+  if (contentType.includes("application/octet-stream") || !contentType) {
+    return isLikelyImageBytes(bytes) ? bytes : undefined;
+  }
+
+  return isLikelyImageBytes(bytes) ? bytes : undefined;
+}
+
+function describeEndpoint(endpoint: OpenAIEndpoint) {
+  try {
+    return new URL(endpoint.baseUrl).host;
+  } catch {
+    return endpoint.baseUrl.replace(/^https?:\/\//i, "").split("/")[0] || "unknown-host";
+  }
+}
+
+function logUpstreamResponse({
+  endpoint,
+  elapsedSeconds,
+  status,
+  contentType,
+  byteLength,
+  imageDetected,
+}: {
+  endpoint: OpenAIEndpoint;
+  elapsedSeconds: number;
+  status: number;
+  contentType: string;
+  byteLength: number;
+  imageDetected: boolean;
+}) {
+  console.info(
+    `[image-generation:upstream-response] endpoint=${endpoint.label} host=${describeEndpoint(endpoint)} status=${status} contentType="${contentType || "-"}" bytes=${byteLength} imageDetected=${imageDetected} elapsed=${elapsedSeconds}s`,
+  );
+}
+
+function logUpstreamError(endpoint: OpenAIEndpoint, elapsedSeconds: number, error: unknown) {
+  console.warn(
+    `[image-generation:upstream-error] endpoint=${endpoint.label} host=${describeEndpoint(endpoint)} elapsed=${elapsedSeconds}s error="${describeFetchError(error)}"`,
+  );
+}
+
+async function fetchAndReadBytes(url: string, init: RequestInit) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort(new Error(`Upstream image request timed out after ${UPSTREAM_IMAGE_REQUEST_TIMEOUT_MS / 1000}s.`));
+  }, UPSTREAM_IMAGE_REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+    const bytes = Buffer.from(await response.arrayBuffer());
+    return { response, bytes };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function prepareUploadImage(inputPath: string, asset: Asset) {
@@ -196,8 +277,9 @@ async function runHighwayImageEdit({
     background: "auto",
     output_format: "png",
   };
+  const startedAt = Date.now();
 
-  const response = await fetch(getHighwayImageEditUrl(endpoint.baseUrl), {
+  const { response, bytes: responseBytes } = await fetchAndReadBytes(getHighwayImageEditUrl(endpoint.baseUrl), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${endpoint.apiKey}`,
@@ -207,12 +289,23 @@ async function runHighwayImageEdit({
   });
 
   const contentType = (response.headers.get("content-type") || "").toLowerCase();
+  const imageBytes = getImageResponseBytes(contentType, responseBytes);
+  const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
 
-  if (response.ok && (contentType.startsWith("image/") || contentType.includes("application/octet-stream"))) {
-    return Buffer.from(await response.arrayBuffer());
+  logUpstreamResponse({
+    endpoint,
+    elapsedSeconds,
+    status: response.status,
+    contentType,
+    byteLength: responseBytes.length,
+    imageDetected: Boolean(imageBytes),
+  });
+
+  if (imageBytes) {
+    return imageBytes;
   }
 
-  const rawText = await response.text();
+  const rawText = responseBytes.toString("utf8");
   let result: unknown = null;
 
   try {
@@ -235,11 +328,12 @@ async function runHighwayImageEdit({
   }
 
   if (image.url) {
-    const fileResponse = await fetch(image.url);
+    const file = await fetchAndReadBytes(image.url, {});
+    const fileResponse = file.response;
     if (!fileResponse.ok) {
       throw new Error(`Generated image URL could not be downloaded (${fileResponse.status}).`);
     }
-    return Buffer.from(await fileResponse.arrayBuffer());
+    return file.bytes;
   }
 
   throw new Error(rawText ? rawText.slice(0, 240) : "Highway image edit response did not include an image.");
@@ -284,6 +378,7 @@ export async function runOpenAIImageJob({
           break;
         } catch (error) {
           const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+          logUpstreamError(endpoint, elapsedSeconds, error);
           attemptLog.push(`${endpoint.label}: fail (${elapsedSeconds}s) - ${describeFetchError(error)}`);
           continue;
         }
@@ -301,7 +396,7 @@ export async function runOpenAIImageJob({
       const startedAt = Date.now();
 
       try {
-        const response = await fetch(`${endpoint.baseUrl}/images/edits`, {
+        const { response, bytes: responseBytes } = await fetchAndReadBytes(`${endpoint.baseUrl}/images/edits`, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${endpoint.apiKey}`,
@@ -311,15 +406,29 @@ export async function runOpenAIImageJob({
         const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
 
         const contentType = (response.headers.get("content-type") || "").toLowerCase();
+        const imageBytes = getImageResponseBytes(contentType, responseBytes);
 
-        if (response.ok && (contentType.startsWith("image/") || contentType.includes("application/octet-stream"))) {
-          outputBytes = Buffer.from(await response.arrayBuffer());
+        logUpstreamResponse({
+          endpoint,
+          elapsedSeconds,
+          status: response.status,
+          contentType,
+          byteLength: responseBytes.length,
+          imageDetected: Boolean(imageBytes),
+        });
+
+        if (imageBytes) {
+          outputBytes = imageBytes;
           endpointUsed = endpoint.label;
-          attemptLog.push(`${endpoint.label}: success (${elapsedSeconds}s)`);
+          attemptLog.push(
+            response.ok
+              ? `${endpoint.label}: success (${elapsedSeconds}s)`
+              : `${endpoint.label}: success (${elapsedSeconds}s, http ${response.status} image body)`,
+          );
           break;
         }
 
-        const rawText = await response.text();
+        const rawText = responseBytes.toString("utf8");
         let result:
           | {
               error?: { message?: string };
@@ -346,13 +455,14 @@ export async function runOpenAIImageJob({
         }
 
         if (response.ok && result?.data?.[0]?.url) {
-          const fileResponse = await fetch(result.data[0].url);
+          const file = await fetchAndReadBytes(result.data[0].url, {});
+          const fileResponse = file.response;
           if (!fileResponse.ok) {
             attemptLog.push(`${endpoint.label}: fail - Generated image URL could not be downloaded (${fileResponse.status}).`);
             continue;
           }
 
-          outputBytes = Buffer.from(await fileResponse.arrayBuffer());
+          outputBytes = file.bytes;
           endpointUsed = endpoint.label;
           attemptLog.push(`${endpoint.label}: success (${elapsedSeconds}s)`);
           break;
@@ -365,6 +475,7 @@ export async function runOpenAIImageJob({
         continue;
       } catch (error) {
         const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+        logUpstreamError(endpoint, elapsedSeconds, error);
         attemptLog.push(`${endpoint.label}: fail (${elapsedSeconds}s) - ${describeFetchError(error)}`);
         continue;
       }
