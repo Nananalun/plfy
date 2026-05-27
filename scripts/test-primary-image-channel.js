@@ -5,7 +5,7 @@ const sharp = require("sharp");
 const projectRoot = path.resolve(__dirname, "..");
 const secretsPath = path.join(projectRoot, "data", "provider-secrets.json");
 const outputRoot = path.join(projectRoot, "data", "primary-channel-tests");
-const timeoutMs = Number.parseInt(process.env.PRIMARY_TEST_TIMEOUT_MS || `${10 * 60 * 1000}`, 10);
+const timeoutMs = Number.parseInt(process.env.PRIMARY_TEST_TIMEOUT_MS || `${300 * 1000}`, 10);
 const inputMaxEdge = Number.parseInt(process.env.PRIMARY_TEST_INPUT_MAX_EDGE || "1536", 10);
 
 function nowLabel() {
